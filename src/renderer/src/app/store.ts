@@ -36,24 +36,26 @@ export interface ExplorerState {
   removeProject: (id: string) => Promise<void>
 }
 
-const central: ExplorerSource = { id: 'central', kind: 'central', label: 'Central' }
-const globalSource: ExplorerSource = { id: 'global', kind: 'global', label: 'Global' }
+const central: ExplorerSource = { id: 'central', kind: 'central', label: '中央仓库' }
+const globalSource: ExplorerSource = { id: 'global', kind: 'global', label: '全局安装' }
 let requestId = 0
 
 function sourceFromSelection(selection: SourceSelection, projects: ExplorerState['projects']): ExplorerSource {
   if (selection.kind === 'central') return central
   if (selection.kind === 'global') return globalSource
   const project = projects.find((item) => item.id === selection.projectId)
+  if (!project) return central
   return { ...selection, id: `project:${selection.projectId}`, label: project?.name ?? selection.projectId, path: project?.path }
 }
 
-async function scanSource(source: ExplorerSource, set: (value: Partial<ExplorerState>) => void) {
+async function scanSource(source: ExplorerSource, set: (value: Partial<ExplorerState>) => void, get: () => ExplorerState) {
   const id = ++requestId
+  const priorSelected = get().selectedAssetId
   set({ loading: true, error: null })
   try {
     const assets = await window.xcSkills.assets.scan(source)
     if (id !== requestId) return
-    set({ assets, loading: false, selectedAssetId: null })
+    set({ assets, loading: false, selectedAssetId: priorSelected && assets.some((asset) => asset.id === priorSelected) ? priorSelected : null })
   } catch (error) {
     if (id !== requestId) return
     set({ loading: false, error: error instanceof Error ? error.message : '加载资源失败', assets: [], selectedAssetId: null })
@@ -88,7 +90,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
       const sourceList = [central, globalSource, ...projects.map((project) => ({ kind: 'project' as const, projectId: project.id, id: `project:${project.id}`, label: project.name, path: project.path }))]
       const selectedSource = sourceFromSelection(lastSource, projects)
       set({ projects, agents, sources: sourceList, selectedSource })
-      await scanSource(selectedSource, set)
+      await scanSource(selectedSource, set, get)
       if (selectedSource.kind === 'central') {
         const branches = await window.xcSkills.repositories.listBranches()
         set({ branches, selectedBranch: branches.find((item) => item.current)?.name ?? null })
@@ -99,7 +101,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   },
   selectSource: async (source) => {
     set({ selectedSource: source, query: '', groupFilter: 'all', statusFilter: 'all', agentFilter: 'all', stale: false, cachedAt: null })
-    await scanSource(source, set)
+    await scanSource(source, set, get)
     if (source.kind === 'central') {
       try {
         const branches = await window.xcSkills.repositories.listBranches()
@@ -122,7 +124,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
     try {
       const view = await window.xcSkills.repositories.selectBranch(branch)
       set({ selectedBranch: branch, stale: view.stale, cachedAt: view.cachedAt, loading: false })
-      await scanSource(source, set)
+      await scanSource(source, set, get)
     } catch (error) {
       set({ loading: false, error: error instanceof Error ? error.message : '切换分支失败' })
     }
@@ -148,7 +150,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
       const current = get().selectedSource
       const selectedSource = current.kind === 'project' && current.projectId === id ? central : current
       set({ projects, sources, selectedSource })
-      if (get().selectedSource.id === 'central' && selectedSource.id === 'central') await scanSource(central, set)
+      if (get().selectedSource.id === 'central' && selectedSource.id === 'central') await scanSource(central, set, get)
     } catch (error) { set({ error: error instanceof Error ? error.message : '移除项目失败' }) }
   },
 }))

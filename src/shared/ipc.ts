@@ -93,6 +93,7 @@ export const AssetRecordSchema = z.object({
   entryState: z.enum(['active', 'frozen', 'conflict', 'invalid']),
   description: z.string(),
   version: z.string().nullable(),
+  agentId: safeId.optional(),
 })
 export type AssetRecord = z.infer<typeof AssetRecordSchema>
 export const AssetDetailSchema = AssetRecordSchema.extend({ markdown: z.string().nullable(), evolution: z.string().nullable(), files: z.array(z.object({ relativePath: z.string(), size: z.number().int().nonnegative(), kind: z.enum(['text', 'binary']) })) })

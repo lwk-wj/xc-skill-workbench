@@ -39,7 +39,7 @@ type CoreServiceOptions = {
   core?: CoreOverrides
 }
 
-const asDesktopAsset = (asset: CoreAsset): AssetRecord => AssetRecordSchema.parse(asset)
+const asDesktopAsset = (asset: unknown): AssetRecord => AssetRecordSchema.parse(asset)
 const keyFor = (source: SourceSelection, id: string) => `${JSON.stringify(source)}:${id}`
 const unknownStatus = (reason: string): DesktopStatus => AssetStatusRecordSchema.parse({
   status: 'unknown', updateAvailable: false, locallyModified: false, sourceHash: null, installedHash: null,
@@ -129,7 +129,7 @@ export class CoreService {
       const assets = (await this.core.scanAssets({ root })) as CoreAsset[]
       const result: AssetRecord[] = []
       for (const raw of assets) {
-        const asset = asDesktopAsset(raw)
+        const asset = asDesktopAsset(agentId ? { ...raw, agentId } : raw)
         const key = keyFor(source, asset.id)
         this.catalog.set(key, asset)
         this.metadata.set(key, { source, projectId, agentId, method: null })
