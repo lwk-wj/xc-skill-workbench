@@ -130,8 +130,8 @@ export const OperationProgressSchema = z.object({ planId: safeId, completed: z.n
 export type OperationProgress = z.infer<typeof OperationProgressSchema>
 
 export const ExternalUrlSchema = z.string().url().refine((value) => {
-  try { return ['http:', 'https:'].includes(new URL(value).protocol) } catch { return false }
-}, 'only http and https URLs are allowed')
+  try { return ['http:', 'https:', 'mailto:'].includes(new URL(value).protocol) } catch { return false }
+}, 'only http, https, and mailto URLs are allowed')
 
 export interface DesktopApi {
   projects: { list(): Promise<ProjectRecord[]>; chooseAndAdd(): Promise<ProjectRecord | null>; remove(id: string): Promise<void> }

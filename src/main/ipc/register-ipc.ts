@@ -8,6 +8,7 @@ import {
   type RepositoryView, type SourceSelection, type XcSkillsConfig,
 } from '../../shared/ipc.js'
 import type { AppStore } from '../services/app-store.js'
+import type { CoreService } from '../services/core-service.js'
 import { z } from 'zod'
 
 type IpcMainLike = { handle(channel: string, listener: (event: unknown, input?: unknown) => unknown): void }
@@ -15,7 +16,12 @@ type DialogLike = { showOpenDialog(options: { properties: Array<'openDirectory' 
 type ShellLike = { openExternal(url: string): Promise<void> }
 
 export interface IpcServices {
+  chooseAndAddProject?: () => Promise<import('../../shared/ipc.js').ProjectRecord | null>
+  listProjects?: () => Promise<import('../../shared/ipc.js').ProjectRecord[]>
+  removeProject?: (id: string) => Promise<void>
   listAgents?: () => Promise<AgentDefinition[]>
+  saveCustomAgent?: (agent: AgentDefinition) => Promise<AgentDefinition[]>
+  removeCustomAgent?: (id: string) => Promise<AgentDefinition[]>
   getConfig?: () => Promise<XcSkillsConfig>
   listBranches?: () => Promise<RepositoryBranch[]>
   selectBranch?: (branch: string) => Promise<RepositoryView>
@@ -38,6 +44,7 @@ export interface RegisterIpcOptions {
   dialog?: DialogLike
   shell?: ShellLike
   builtInAgentIds?: string[]
+  coreService?: CoreService
 }
 
 const unsupported = (name: string): never => { throw new Error(`${name} is not available`) }
@@ -46,26 +53,34 @@ const asStringId = (input: unknown): string => {
   return input
 }
 
-export const registerIpc = ({ ipcMain, appStore, services = {}, dialog, shell, builtInAgentIds = [] }: RegisterIpcOptions): void => {
+export const registerIpc = ({ ipcMain, appStore, services: suppliedServices = {}, coreService, dialog, shell, builtInAgentIds = [] }: RegisterIpcOptions): void => {
+  const coreBindings: IpcServices = coreService ? {
+    listProjects: () => coreService.listProjects(), chooseAndAddProject: () => coreService.chooseAndAddProject(), removeProject: (id) => coreService.removeProject(id),
+    listAgents: () => coreService.listAgents(), saveCustomAgent: (agent) => coreService.saveCustomAgent(agent), removeCustomAgent: (id) => coreService.removeCustomAgent(id),
+    getConfig: () => coreService.getConfig(), listBranches: () => coreService.listBranches(), selectBranch: (branch) => coreService.selectBranch(branch), setDefaultBranch: (branch) => coreService.setDefaultBranch(branch), refresh: () => coreService.refresh(),
+    scan: (source) => coreService.scan(source), detail: (selection) => coreService.detail(selection), statuses: (selection) => coreService.statuses(selection),
+  } : {}
+  const services: IpcServices = { ...coreBindings, ...suppliedServices }
   const storedPlans = new Set<string>()
   const invoke = <T>(channel: string, parser: { parse(value: unknown): T }, handler: (value: T) => unknown): void => {
     ipcMain.handle(channel, (_event, input) => handler(parser.parse(input)))
   }
   const noInput = z.union([z.undefined(), z.null()])
 
-  invoke(Channels.projectsList, noInput, async () => (await appStore.read()).projects)
+  invoke(Channels.projectsList, noInput, async () => services.listProjects ? services.listProjects() : (await appStore.read()).projects)
   invoke(Channels.projectsChooseAndAdd, noInput, async () => {
+    if (services.chooseAndAddProject) return services.chooseAndAddProject()
     if (!dialog) return null
     const picked = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
     if (picked.canceled || !picked.filePaths[0]) return null
     const path = picked.filePaths[0]
     return appStore.addProject({ id: randomUUID(), name: basename(path), path })
   })
-  invoke(Channels.projectsRemove, z.string().regex(/^[A-Za-z0-9._:-]+$/).min(1).max(200), async (id) => appStore.removeProject(id))
+  invoke(Channels.projectsRemove, z.string().regex(/^[A-Za-z0-9._:-]+$/).min(1).max(200), async (id) => services.removeProject ? services.removeProject(id) : appStore.removeProject(id))
 
   invoke(Channels.agentsList, noInput, async () => services.listAgents ? services.listAgents() : (await appStore.read()).customAgents)
-  invoke(Channels.agentsSaveCustom, AgentDefinitionSchema, async (agent) => appStore.addCustomAgent(agent))
-  invoke(Channels.agentsRemoveCustom, z.string().regex(/^[A-Za-z0-9._:-]+$/).min(1).max(200), async (id) => appStore.removeCustomAgent(id))
+  invoke(Channels.agentsSaveCustom, AgentDefinitionSchema, async (agent) => services.saveCustomAgent ? services.saveCustomAgent(agent) : appStore.addCustomAgent(agent))
+  invoke(Channels.agentsRemoveCustom, z.string().regex(/^[A-Za-z0-9._:-]+$/).min(1).max(200), async (id) => services.removeCustomAgent ? services.removeCustomAgent(id) : appStore.removeCustomAgent(id))
 
   invoke(Channels.repositoriesGetConfig, noInput, async () => services.getConfig ? services.getConfig() : {})
   invoke(Channels.repositoriesListBranches, noInput, async () => services.listBranches ? services.listBranches() : [])

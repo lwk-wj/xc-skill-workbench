@@ -4452,6 +4452,7 @@ snapshots:
       degit: 2.8.6
       fs-extra: 11.3.6
       picocolors: 1.1.1
+      zod: 4.4.3
 
   xml-name-validator@5.0.0: {}
 

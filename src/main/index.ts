@@ -1,9 +1,12 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
+import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { createWindowOptions } from './window.js'
 import { AppStore } from './services/app-store.js'
 import { registerIpc } from './ipc/register-ipc.js'
+import { CoreService } from './services/core-service.js'
+import { LogService } from './services/log-service.js'
 import type { WindowBounds } from '../shared/ipc.js'
 
 const rendererUrl = process.env.ELECTRON_RENDERER_URL
@@ -60,8 +63,20 @@ const createMainWindow = async (appStore: AppStore): Promise<BrowserWindow> => {
 }
 
 app.whenReady().then(async () => {
-  const appStore = new AppStore(join(app.getPath('userData'), 'state.json'))
-  registerIpc({ ipcMain, appStore, dialog: { showOpenDialog: (options) => dialog.showOpenDialog(options) }, shell })
+  const userData = app.getPath('userData')
+  const appStore = new AppStore(join(userData, 'state.json'))
+  const log = new LogService(userData)
+  const coreService = new CoreService({
+    appStore,
+    configPath: join(homedir(), '.xc-skills-config.json'),
+    cacheRoot: join(userData, 'cache'),
+    chooseDirectory: async () => {
+      const picked = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
+      return picked.canceled || !picked.filePaths[0] ? null : picked.filePaths[0]
+    },
+    log,
+  })
+  registerIpc({ ipcMain, appStore, coreService, dialog: { showOpenDialog: (options) => dialog.showOpenDialog(options) }, shell })
   await createMainWindow(appStore)
 
   app.on('activate', () => {
