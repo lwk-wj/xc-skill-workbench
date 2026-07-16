@@ -1,8 +1,11 @@
 import type { BrowserWindowConstructorOptions } from 'electron'
+import type { WindowBounds } from '../shared/ipc.js'
 
-export const createWindowOptions = (preloadPath: string): BrowserWindowConstructorOptions => ({
-  width: 1280,
-  height: 800,
+export const createWindowOptions = (preloadPath: string, bounds?: WindowBounds | null): BrowserWindowConstructorOptions => ({
+  width: bounds?.width ?? 1280,
+  height: bounds?.height ?? 800,
+  ...(bounds?.x === undefined ? {} : { x: bounds.x }),
+  ...(bounds?.y === undefined ? {} : { y: bounds.y }),
   minWidth: 980,
   minHeight: 640,
   show: false,

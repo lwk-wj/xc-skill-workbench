@@ -1,7 +1,10 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createWindowOptions } from './window.js'
+import { AppStore } from './services/app-store.js'
+import { registerIpc } from './ipc/register-ipc.js'
+import type { WindowBounds } from '../shared/ipc.js'
 
 const rendererUrl = process.env.ELECTRON_RENDERER_URL
 const rendererFile = join(__dirname, '../renderer/index.html')
@@ -13,8 +16,8 @@ const isAllowedNavigation = (url: string): boolean => {
   return url === pathToFileURL(rendererFile).toString()
 }
 
-const createMainWindow = (): BrowserWindow => {
-  const window = new BrowserWindow(createWindowOptions(join(__dirname, '../preload/index.mjs')))
+const createMainWindow = async (appStore: AppStore): Promise<BrowserWindow> => {
+  const window = new BrowserWindow(createWindowOptions(join(__dirname, '../preload/index.mjs'), await appStore.getWindowBounds()))
 
   window.once('ready-to-show', () => {
     window.show()
@@ -32,6 +35,21 @@ const createMainWindow = (): BrowserWindow => {
     }
   })
 
+  const currentBounds = (): WindowBounds => {
+    const bounds = window.getBounds()
+    return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }
+  }
+  const persistBounds = (): void => { void appStore.setWindowBounds(currentBounds()) }
+  window.on('move', persistBounds)
+  window.on('resize', persistBounds)
+  let closingAfterPersist = false
+  window.on('close', (event) => {
+    if (closingAfterPersist) return
+    event.preventDefault()
+    closingAfterPersist = true
+    void appStore.setWindowBounds(currentBounds()).finally(() => window.destroy())
+  })
+
   if (rendererUrl) {
     void window.loadURL(rendererUrl)
   } else {
@@ -41,12 +59,14 @@ const createMainWindow = (): BrowserWindow => {
   return window
 }
 
-app.whenReady().then(() => {
-  createMainWindow()
+app.whenReady().then(async () => {
+  const appStore = new AppStore(join(app.getPath('userData'), 'state.json'))
+  registerIpc({ ipcMain, appStore, dialog: { showOpenDialog: (options) => dialog.showOpenDialog(options) }, shell })
+  await createMainWindow(appStore)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow()
+      void createMainWindow(appStore)
     }
   })
 })
