@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
+import { BUILTIN_AGENTS } from 'xc-skills/core'
 import { createWindowOptions } from './window.js'
 import { AppStore } from './services/app-store.js'
 import { registerIpc } from './ipc/register-ipc.js'
@@ -76,7 +77,14 @@ app.whenReady().then(async () => {
     },
     log,
   })
-  registerIpc({ ipcMain, appStore, coreService, dialog: { showOpenDialog: (options) => dialog.showOpenDialog(options) }, shell })
+  registerIpc({
+    ipcMain,
+    appStore,
+    coreService,
+    builtInAgentIds: BUILTIN_AGENTS.map((agent) => agent.id),
+    dialog: { showOpenDialog: (options) => dialog.showOpenDialog(options) },
+    shell,
+  })
   await createMainWindow(appStore)
 
   app.on('activate', () => {
