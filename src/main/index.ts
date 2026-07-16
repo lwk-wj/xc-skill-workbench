@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { BUILTIN_AGENTS } from 'xc-skills/core'
@@ -12,6 +12,12 @@ import type { WindowBounds } from '../shared/ipc.js'
 
 const rendererUrl = process.env.ELECTRON_RENDERER_URL
 const rendererFile = join(__dirname, '../renderer/index.html')
+const e2eEnabled = process.env.XC_SKILLS_E2E === '1'
+
+// E2E-only process isolation hooks. Production launches ignore these values.
+if (e2eEnabled && process.env.XC_SKILLS_USER_DATA) {
+  app.setPath('userData', resolve(process.env.XC_SKILLS_USER_DATA))
+}
 
 const isAllowedNavigation = (url: string): boolean => {
   if (rendererUrl) {
@@ -69,9 +75,12 @@ app.whenReady().then(async () => {
   const log = new LogService(userData)
   const coreService = new CoreService({
     appStore,
-    configPath: join(homedir(), '.xc-skills-config.json'),
+    configPath: e2eEnabled && process.env.XC_SKILLS_CONFIG_PATH
+      ? resolve(process.env.XC_SKILLS_CONFIG_PATH)
+      : join(homedir(), '.xc-skills-config.json'),
     cacheRoot: join(userData, 'cache'),
     chooseDirectory: async () => {
+      if (e2eEnabled && process.env.XC_SKILLS_DIALOG_PATH) return resolve(process.env.XC_SKILLS_DIALOG_PATH)
       const picked = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
       return picked.canceled || !picked.filePaths[0] ? null : picked.filePaths[0]
     },
