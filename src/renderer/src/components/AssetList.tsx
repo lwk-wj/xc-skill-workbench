@@ -7,7 +7,7 @@ export function AssetList({ assets, selectedId, onSelect, loading, error, query,
     .filter((asset) => statusFilter === 'all' || asset.entryState === statusFilter)
     .filter((asset) => agentFilter === 'all' || (asset as AssetRecord & { agentId?: string }).agentId === agentFilter)
   if (loading) return <div className="asset-state" role="status">正在加载资源…</div>
-  if (error) return <div className="asset-state error" role="alert">{error}</div>
+  if (error) return <div className="asset-state error">加载资源失败，请查看上方提示。</div>
   if (!filtered.length) return <div className="asset-state">没有匹配的资源</div>
   return <div className="asset-list" role="list" aria-label="资源列表">{filtered.map((asset) => <button role="listitem" className={asset.id === selectedId ? 'asset-row selected' : 'asset-row'} key={asset.id} onClick={() => onSelect(asset.id)}>
     <span className="asset-copy"><strong>{asset.name}</strong><small>{asset.group} · {asset.description}</small></span><StatusBadge status={asset.entryState} />
