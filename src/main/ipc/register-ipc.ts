@@ -139,7 +139,8 @@ export const registerIpc = ({ ipcMain, appStore, services: suppliedServices = {}
     }
     try {
       const result = OperationResultSchema.parse(await services.execute(planId, options))
-      emitProgress(event, OperationProgressSchema.parse({ planId, completed: 1, total: 1, message: result.status }))
+      const total = task.plan.steps.length
+      emitProgress(event, OperationProgressSchema.parse({ planId, completed: total, total, message: result.status }))
       await services.rescan?.(result.affectedPaths)
       return result
     } finally {

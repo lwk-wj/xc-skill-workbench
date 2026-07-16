@@ -1,9 +1,13 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useExplorerStore } from './store'
 import { AssetList } from '../components/AssetList'
 import { BranchPicker } from '../components/BranchPicker'
 import { SourceSidebar } from '../components/SourceSidebar'
 import { AssetDetail } from '../components/AssetDetail'
+import { OperationDialog } from '../features/operations/OperationDialog'
+import type { OperationKind } from '../../../shared/ipc.js'
+
+type OperationLocation = { projectId: string | null; agentId: string; path: string }
 import '../styles/tokens.css'
 import '../styles/app.css'
 
@@ -11,6 +15,7 @@ const tabs = [{ value: 'skills', label: 'Skills' }, { value: 'rules', label: 'Ru
 
 export function App() {
   const state = useExplorerStore()
+  const [operation, setOperation] = useState<{ kind: OperationKind; location: OperationLocation } | null>(null)
   useEffect(() => { void state.initialize() }, [])
   const groups = useMemo(() => ['all', ...new Set(state.assets.map((asset) => asset.group))], [state.assets])
   const selectedAsset = state.assets.find((asset) => asset.id === state.selectedAssetId)
@@ -33,6 +38,7 @@ export function App() {
       </header>
       <AssetList assets={visibleAssets} selectedId={state.selectedAssetId} onSelect={state.selectAsset} loading={state.loading} error={state.error} query={state.query} groupFilter={state.groupFilter} statusFilter={state.statusFilter} agentFilter={state.agentFilter} />
     </section>
-    <aside className="detail-pane" aria-label="资源详情">{selectedAsset ? <AssetDetail asset={selectedAsset} source={state.selectedSource} /> : <div className="detail-empty">选择资源查看详情</div>}</aside>
+    <aside className="detail-pane" aria-label="资源详情">{selectedAsset ? <AssetDetail asset={selectedAsset} source={state.selectedSource} onAction={(kind, location) => { if (kind !== 'diagnose') setOperation({ kind: kind === 'update-with-warning' ? 'update' : kind as OperationKind, location }) }} /> : <div className="detail-empty">选择资源查看详情</div>}</aside>
+    {selectedAsset && operation && <OperationDialog open kind={operation.kind} asset={selectedAsset} projects={state.projects} agents={state.agents} location={operation.location} source={operation.location.projectId ? { kind: 'project', projectId: operation.location.projectId } : { kind: 'global' }} onClose={() => setOperation(null)} onRescan={() => void state.selectSource(state.selectedSource)} plan={window.xcSkills.operations.plan} execute={window.xcSkills.operations.execute} cancel={window.xcSkills.operations.cancel} progressEvents={window.xcSkills.operations.onProgress} />}
   </main>
 }

@@ -280,11 +280,13 @@ export class CoreService {
     this.prunePlans()
     const task = this.planned.get(planId)
     if (!task) throw new Error('unknown or expired plan id')
+    const abortFromCaller = () => task.controller.abort()
+    if (options?.signal?.aborted) task.controller.abort()
+    else options?.signal?.addEventListener('abort', abortFromCaller, { once: true })
     try {
-      const result = await this.core.executeOperation(task.plan as never, { signal: options?.signal ?? task.controller.signal, onProgress: options?.onProgress }) as unknown as OperationResult
-      await this.rescanAffected(result.affectedPaths)
-      return result
+      return await this.core.executeOperation(task.plan as never, { signal: task.controller.signal, onProgress: options?.onProgress }) as unknown as OperationResult
     } finally {
+      options?.signal?.removeEventListener('abort', abortFromCaller)
       this.planned.delete(planId)
     }
   }

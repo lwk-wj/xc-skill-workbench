@@ -121,8 +121,8 @@ export function OperationDialog({ open, kind, asset, projects, agents, onClose, 
           <label>目标范围<select aria-label="目标范围" value={scope} onChange={(event) => setScope(event.target.value as 'global' | 'project')}><option value="global">全局</option><option value="project">项目</option></select></label>
           {scope === 'project' && <label>项目<select aria-label="目标项目" value={projectId ?? ''} onChange={(event) => setProjectId(event.target.value)}>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>}
           <fieldset><legend>启用的 Agent</legend>{enabledAgents.map((agent) => <label key={agent.id}><input type="checkbox" checked={selectedAgents.includes(agent.id)} onChange={() => toggleAgent(agent.id)} />{agent.name}</label>)}</fieldset>
-          <fieldset><legend>安装方式</legend><label><input type="radio" name="operation-method" value="copy" checked={method === 'copy'} onChange={() => setMethod('copy')} />复制</label>{allowSymlink && <label><input type="radio" name="operation-method" value="symlink" checked={method === 'symlink'} onChange={() => setMethod('symlink')} />软链接</label>}</fieldset>
         </div>}
+        {(kind === 'install' || kind === 'update') && <fieldset><legend>安装方式</legend><label><input type="radio" name="operation-method" value="copy" checked={method === 'copy'} onChange={() => setMethod('copy')} />复制</label>{allowSymlink && <label><input type="radio" name="operation-method" value="symlink" checked={method === 'symlink'} onChange={() => setMethod('symlink')} />软链接</label>}</fieldset>}
         <p>目标：{targetLabel} · {asset.name}</p>
         {affected.length > 0 && <section aria-label="受影响路径"><h3>受影响路径</h3><ul>{affected.map((path) => <li key={path}><code>{path}</code></li>)}</ul></section>}
         {warnings.map((warning) => <div role="alert" key={warning}>{warning}</div>)}
