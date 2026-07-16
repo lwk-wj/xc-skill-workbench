@@ -62,6 +62,7 @@ export function AssetDetail({ asset, source = { kind: 'central' }, loadDetail = 
   const markdown = detail?.markdown ?? null
   const renderedMarkdown = textWithinLimit(markdown) ? renderSafeMarkdown(markdown) : ''
   const showTextLimit = Boolean(markdown && !textWithinLimit(markdown))
+  const metadataOnly = Boolean(detail && !markdown && detail.files.some((file) => file.kind === 'binary' || file.size > MAX_TEXT_BYTES))
 
   return <section className="asset-detail" aria-label="资源详情">
     <header className="asset-detail-header"><h2>{asset.name}</h2><small>{asset.group} · {asset.version ?? '无版本'}</small></header>
@@ -75,8 +76,8 @@ export function AssetDetail({ asset, source = { kind: 'central' }, loadDetail = 
         {asset.type === 'skills' && <button role="tab" aria-selected={tab === 'evolution'} onClick={() => setTab('evolution')}>演进历史</button>}
       </div>
       <div className="detail-content" role="tabpanel">
-        {tab === 'preview' && (showTextLimit ? <p className="detail-muted">文件过大，仅显示文件元数据。</p> : <div data-testid="markdown-preview" onClick={handleSafeMarkdownClick} dangerouslySetInnerHTML={{ __html: renderedMarkdown }} />)}
-        {tab === 'source' && (showTextLimit ? <p className="detail-muted">文件过大，无法显示源码。</p> : <pre className="markdown-source">{detail.markdown ? <><span>{detail.markdown.split('\n')[0]}</span>{detail.markdown.includes('\n') ? `\n${detail.markdown.split('\n').slice(1).join('\n')}` : ''}</> : '暂无源码'}</pre>)}
+        {tab === 'preview' && (showTextLimit || metadataOnly ? <p className="detail-muted">{metadataOnly ? '文件为二进制或过大，仅显示文件元数据。' : '文件过大，仅显示文件元数据。'}</p> : <div data-testid="markdown-preview" onClick={handleSafeMarkdownClick} dangerouslySetInnerHTML={{ __html: renderedMarkdown }} />)}
+        {tab === 'source' && (showTextLimit || metadataOnly ? <p className="detail-muted">{metadataOnly ? '文件为二进制或过大，无法显示源码。' : '文件过大，无法显示源码。'}</p> : <pre className="markdown-source">{detail.markdown ? <><span>{detail.markdown.split('\n')[0]}</span>{detail.markdown.includes('\n') ? `\n${detail.markdown.split('\n').slice(1).join('\n')}` : ''}</> : '暂无源码'}</pre>)}
         {tab === 'files' && <AssetFileTree files={detail.files} />}
         {tab === 'evolution' && asset.type === 'skills' && <div data-testid="evolution-content">{textWithinLimit(detail.evolution) ? <><div onClick={handleSafeMarkdownClick} dangerouslySetInnerHTML={{ __html: renderSafeMarkdown(detail.evolution) }} /><pre className="sr-only">{detail.evolution}</pre></> : <p className="detail-muted">{detail.evolution ? '文件过大，无法显示演进历史。' : '暂无演进历史'}</p>}</div>}
       </div>

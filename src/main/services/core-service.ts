@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
+import { lstat, readdir } from 'node:fs/promises'
 import {
   BUILTIN_AGENTS,
   evaluateAssetStatus,
@@ -59,6 +60,18 @@ export class CoreService {
   private readonly catalog = new Map<string, AssetRecord>()
   private readonly metadata = new Map<string, CatalogMeta>()
   private readonly locations = new Map<string, Array<{ asset: AssetRecord; meta: CatalogMeta }>>()
+
+  private async installMethod(path: string): Promise<'copy' | 'symlink' | null> {
+    try {
+      const entry = await lstat(path)
+      if (entry.isSymbolicLink()) return 'symlink'
+      if (!entry.isDirectory()) return 'copy'
+      const children = await readdir(path, { withFileTypes: true })
+      return children.some((child) => child.isSymbolicLink()) ? 'symlink' : 'copy'
+    } catch {
+      return null
+    }
+  }
 
   constructor(options: CoreServiceOptions) {
     this.appStore = options.appStore
@@ -191,7 +204,7 @@ export class CoreService {
     const asset = await this.getCatalogAsset(selection)
     return AssetDetailSchema.parse(await this.core.readAssetDetail(asset as unknown as CoreAsset))
   }
-  async statuses(selection: AssetSelection): Promise<Array<{ projectId: string | null; agentId: string; path: string; method: null; status: DesktopStatus }>> {
+  async statuses(selection: AssetSelection): Promise<Array<{ projectId: string | null; agentId: string; path: string; method: 'copy' | 'symlink' | null; status: DesktopStatus }>> {
     const installed = await this.getCatalogAsset(selection)
     const meta = this.metadata.get(keyFor(selection.source, selection.assetId))
     const scannedLocations = (this.locations.get(keyFor(selection.source, selection.assetId)) ?? []).filter(({ meta: locationMeta }) => selection.source.kind !== 'project' || locationMeta.projectId === selection.source.projectId)
@@ -199,16 +212,17 @@ export class CoreService {
     try { central = (await this.scan({ kind: 'central' })).find((candidate) => candidate.type === installed.type && candidate.group === installed.group && candidate.name === installed.name) } catch { /* report unknown below */ }
     if (!central) {
       const locations = scannedLocations.length > 0 ? scannedLocations.map(({ asset: location, meta: locationMeta }) => ({ projectId: locationMeta.projectId, agentId: locationMeta.agentId ?? '', path: location.path })) : [{ projectId: meta?.projectId ?? null, agentId: meta?.agentId ?? '', path: installed.path }]
-      return locations.map((location) => ({ ...location, method: null as null, status: unknownStatus('中央分支不存在同名资产') }))
+      return Promise.all(locations.map(async (location) => ({ ...location, method: await this.installMethod(location.path), status: unknownStatus('中央分支不存在同名资产') })))
     }
 
-    const evaluate = async (location: { projectId: string | null; agentId: string; path: string }): Promise<{ projectId: string | null; agentId: string; path: string; method: null; status: DesktopStatus }> => {
-      try { return { ...location, method: null, status: AssetStatusRecordSchema.parse(await this.core.evaluateAssetStatus(central as unknown as CoreAsset, location.path)) } }
-      catch { return { ...location, method: null, status: unknownStatus('无法计算资产状态') } }
+    const evaluate = async (location: { projectId: string | null; agentId: string; path: string }): Promise<{ projectId: string | null; agentId: string; path: string; method: 'copy' | 'symlink' | null; status: DesktopStatus }> => {
+      const method = await this.installMethod(location.path)
+      try { return { ...location, method, status: AssetStatusRecordSchema.parse(await this.core.evaluateAssetStatus(central as unknown as CoreAsset, location.path)) } }
+      catch { return { ...location, method, status: unknownStatus('无法计算资产状态') } }
     }
     if (selection.source.kind !== 'central') {
       const locations = scannedLocations.length > 0 ? scannedLocations.map(({ asset: location, meta: locationMeta }) => ({ projectId: locationMeta.projectId, agentId: locationMeta.agentId ?? '', path: location.path })) : [{ projectId: meta?.projectId ?? null, agentId: meta?.agentId ?? '', path: installed.path }]
-      const results: Array<{ projectId: string | null; agentId: string; path: string; method: null; status: DesktopStatus }> = []
+      const results: Array<{ projectId: string | null; agentId: string; path: string; method: 'copy' | 'symlink' | null; status: DesktopStatus }> = []
       let cursor = 0
       const worker = async () => { while (true) { const index = cursor++; if (index >= locations.length) return; results[index] = await evaluate(locations[index]!) } }
       await Promise.all(Array.from({ length: Math.min(8, locations.length) }, worker))
@@ -234,7 +248,7 @@ export class CoreService {
         }
       }
     }
-    const results: Array<{ projectId: string | null; agentId: string; path: string; method: null; status: DesktopStatus }> = []
+    const results: Array<{ projectId: string | null; agentId: string; path: string; method: 'copy' | 'symlink' | null; status: DesktopStatus }> = []
     let cursor = 0
     const worker = async () => { while (true) { const index = cursor++; if (index >= locations.length) return; results[index] = await evaluate(locations[index]!) } }
     await Promise.all(Array.from({ length: Math.min(8, locations.length) }, worker))

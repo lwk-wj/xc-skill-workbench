@@ -55,4 +55,10 @@ describe('asset detail', () => {
     expect(screen.queryByRole('tab', { name: '演进历史' })).toBeNull()
     expect(screen.queryByRole('button', { name: '冻结' })).toBeNull()
   })
+
+  it('shows binary and oversized files as metadata-only', async () => {
+    render(<AssetDetail asset={asset} loadDetail={vi.fn().mockResolvedValue({ ...detail, markdown: null, files: [{ relativePath: 'archive.bin', size: 2_000_000, kind: 'binary' }] })} loadStatuses={vi.fn().mockResolvedValue([])} />)
+    await waitFor(() => expect(screen.getByText(/仅显示文件元数据/)).toBeTruthy())
+    expect(screen.queryByTestId('markdown-preview')).toBeNull()
+  })
 })
