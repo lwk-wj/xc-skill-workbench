@@ -293,6 +293,7 @@ export class CoreService {
     const task = this.planned.get(planId)
     if (!task) throw new Error('unknown or expired plan id')
     task.controller.abort()
+    this.planned.delete(planId)
   }
   async planOperation(request: OperationRequest): Promise<OperationPlan> { return this.plan(request) }
   async executeOperation(planId: string, options?: { signal?: AbortSignal; onProgress?: (progress: import('../../shared/ipc.js').OperationProgress) => void }): Promise<OperationResult> { return this.execute(planId, options) }
