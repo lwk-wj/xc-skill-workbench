@@ -36,6 +36,12 @@ export function SettingsView({ onClose }: SettingsViewProps) {
     if (!window.confirm(`移除 Agent ${agent.name}？`)) return
     try { setAgents(await window.xcSkills.agents.removeCustom(agent.id)) } catch (reason) { setError(reason) }
   }
+  const toggleAgent = async (agent: AgentDefinition): Promise<void> => {
+    try {
+      const next = await window.xcSkills.agents.saveCustom({ ...agent, enabled: !agent.enabled })
+      setAgents(next)
+    } catch (reason) { setError(reason) }
+  }
   return <div className="settings-overlay" role="dialog" aria-modal="true" aria-label="设置">
     <section className="settings-view">
       <header className="settings-header"><div><h2>设置</h2><p className="subtitle">应用偏好与 Agent 配置</p></div><button type="button" aria-label="关闭设置" onClick={onClose}>×</button></header>
@@ -50,7 +56,7 @@ export function SettingsView({ onClose }: SettingsViewProps) {
           <div><dt>默认分组</dt><dd>{config.defaultGroups?.join('、') || '全部分组'}</dd></div>
         </dl></section>
         <section className="settings-section"><div className="section-heading"><h3>Agents</h3><button type="button" onClick={() => setShowAgentForm(true)}>添加自定义 Agent</button></div>
-          <div className="agent-list">{agents.map((agent) => <div className={!agent.enabled ? 'agent-row disabled' : 'agent-row'} key={agent.id}><div><strong>{agent.name}</strong><small>{agent.id}{agent.builtIn ? ' · 内置' : ' · 自定义'}</small></div><div className="agent-actions"><label><input type="checkbox" checked={agent.enabled} onChange={() => setAgents((current) => current.map((entry) => entry.id === agent.id ? { ...entry, enabled: !entry.enabled } : entry))} />启用</label>{!agent.builtIn && <button type="button" onClick={() => void removeAgent(agent)}>移除</button>}</div></div>)}</div>
+          <div className="agent-list">{agents.map((agent) => <div className={!agent.enabled ? 'agent-row disabled' : 'agent-row'} key={agent.id}><div><strong>{agent.name}</strong><small>{agent.id}{agent.builtIn ? ' · 内置' : ' · 自定义'}</small></div><div className="agent-actions"><label><input type="checkbox" checked={agent.enabled} onChange={() => void toggleAgent(agent)} />启用</label>{!agent.builtIn && <button type="button" onClick={() => void removeAgent(agent)}>移除</button>}</div></div>)}</div>
           {showAgentForm && <CustomAgentForm onSave={saveAgent} onCancel={() => setShowAgentForm(false)} />}
         </section>
       </div>

@@ -20,8 +20,14 @@ type FormState = {
 
 const initialState = (agent?: AgentDefinition): FormState => ({
   id: agent?.id ?? '', name: agent?.name ?? '', projectBaseDir: agent?.projectBaseDir ?? '', globalBaseDir: agent?.globalBaseDir ?? '',
-  skills: agent?.assetDirs.skills ?? 'skills', rules: agent?.assetDirs.rules ?? 'rules', workflows: agent?.assetDirs.workflows ?? 'workflows', enabled: agent?.enabled ?? true,
+  skills: relativeFrom(agent?.globalBaseDir, agent?.assetDirs.skills) ?? 'skills', rules: relativeFrom(agent?.globalBaseDir, agent?.assetDirs.rules) ?? 'rules', workflows: relativeFrom(agent?.globalBaseDir, agent?.assetDirs.workflows) ?? 'workflows', enabled: agent?.enabled ?? true,
 })
+
+const relativeFrom = (base?: string, value?: string): string | null => {
+  if (!base || !value) return null
+  const prefix = base.replace(/[\\/]$/, '') + '/'
+  return value.startsWith(prefix) ? value.slice(prefix.length) : value
+}
 
 const isAbsolute = (value: string): boolean => value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value)
 const relativeDirectoryError = (value: string): string | null => {
@@ -77,4 +83,3 @@ export function CustomAgentForm({ agent, onSave, onCancel }: CustomAgentFormProp
     <div className="form-actions"><button type="submit">保存 Agent</button>{onCancel && <button type="button" onClick={onCancel}>取消</button>}</div>
   </form>
 }
-

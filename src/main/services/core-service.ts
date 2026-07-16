@@ -114,7 +114,8 @@ export class CoreService {
   async listAgents(): Promise<AgentDefinition[]> {
     const state = await this.appStore.read()
     const builtins = this.core.BUILTIN_AGENTS as unknown as AgentDefinition[]
-    return [...builtins, ...state.customAgents]
+    const overrides = new Map(state.customAgents.map((agent) => [agent.id, agent]))
+    return [...builtins.map((agent) => overrides.get(agent.id) ?? agent), ...state.customAgents.filter((agent) => !agent.builtIn)]
   }
   async saveCustomAgent(agent: AgentDefinition): Promise<AgentDefinition[]> { return this.appStore.addCustomAgent(agent) }
   async removeCustomAgent(id: string): Promise<AgentDefinition[]> { return this.appStore.removeCustomAgent(id) }

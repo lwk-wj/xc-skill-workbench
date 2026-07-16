@@ -108,7 +108,13 @@ export class AppStore {
     const canonicalize = async (value: string): Promise<string> => realpath(value).catch(() => resolve(value))
     const normalized = { ...parsed, projectBaseDir: await canonicalize(parsed.projectBaseDir), globalBaseDir: await canonicalize(parsed.globalBaseDir), assetDirs: { skills: await canonicalize(parsed.assetDirs.skills), rules: await canonicalize(parsed.assetDirs.rules), workflows: await canonicalize(parsed.assetDirs.workflows) } }
     const next = await this.update((state) => {
-      if (state.customAgents.some((entry) => entry.id === normalized.id)) throw new Error('Agent id already exists')
+      const existing = state.customAgents.findIndex((entry) => entry.id === normalized.id)
+      if (existing >= 0) {
+        if (!state.customAgents[existing]!.builtIn && !normalized.builtIn) throw new Error('Agent id already exists')
+        const customAgents = [...state.customAgents]
+        customAgents[existing] = normalized
+        return { ...state, customAgents }
+      }
       return { ...state, customAgents: [...state.customAgents, normalized] }
     })
     return next.customAgents
