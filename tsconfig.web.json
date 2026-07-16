@@ -19,5 +19,5 @@
     "jsx": "react-jsx",
     "types": ["vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx", "test/renderer/**/*.ts", "test/renderer/**/*.tsx"]
+  "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx", "src/renderer/src/env.d.ts", "test/renderer/**/*.ts", "test/renderer/**/*.tsx"]
 }

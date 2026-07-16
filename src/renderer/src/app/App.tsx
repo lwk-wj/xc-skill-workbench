@@ -3,7 +3,7 @@ import { useExplorerStore } from './store'
 import { AssetList } from '../components/AssetList'
 import { BranchPicker } from '../components/BranchPicker'
 import { SourceSidebar } from '../components/SourceSidebar'
-import { StatusBadge } from '../components/StatusBadge'
+import { AssetDetail } from '../components/AssetDetail'
 import '../styles/tokens.css'
 import '../styles/app.css'
 
@@ -33,6 +33,6 @@ export function App() {
       </header>
       <AssetList assets={visibleAssets} selectedId={state.selectedAssetId} onSelect={state.selectAsset} loading={state.loading} error={state.error} query={state.query} groupFilter={state.groupFilter} statusFilter={state.statusFilter} agentFilter={state.agentFilter} />
     </section>
-    <aside className="detail-pane" aria-label="资源详情">{selectedAsset ? <><h2>{selectedAsset.name}</h2><StatusBadge status={selectedAsset.entryState} /><p>{selectedAsset.description || '暂无描述'}</p><p className="detail-path">{selectedAsset.path}</p></> : <div className="detail-empty">选择资源查看详情</div>}</aside>
+    <aside className="detail-pane" aria-label="资源详情">{selectedAsset ? <AssetDetail asset={selectedAsset} source={state.selectedSource} /> : <div className="detail-empty">选择资源查看详情</div>}</aside>
   </main>
 }
