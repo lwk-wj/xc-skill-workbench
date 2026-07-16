@@ -60,6 +60,8 @@ export class CoreService {
   private readonly catalog = new Map<string, AssetRecord>()
   private readonly metadata = new Map<string, CatalogMeta>()
   private readonly locations = new Map<string, Array<{ asset: AssetRecord; meta: CatalogMeta }>>()
+  private readonly planned = new Map<string, { plan: OperationPlan; controller: AbortController; createdAt: number }>()
+  private readonly planExpiryMs = 10 * 60 * 1000
 
   private async installMethod(path: string): Promise<'copy' | 'symlink' | null> {
     try {
@@ -256,7 +258,12 @@ export class CoreService {
   }
 
   async plan(request: OperationRequest): Promise<OperationPlan> {
-    const sourceAsset = await this.getCatalogAsset(request.asset)
+    this.prunePlans()
+    let sourceAsset = await this.getCatalogAsset(request.asset)
+    if (request.kind === 'update' && request.asset.source.kind !== 'central') {
+      const centralAssets = await this.scan({ kind: 'central' })
+      sourceAsset = centralAssets.find((candidate) => candidate.type === sourceAsset.type && candidate.group === sourceAsset.group && candidate.name === sourceAsset.name) ?? sourceAsset
+    }
     const state = await this.appStore.read()
     const agent = (await this.listAgents()).find((item) => item.id === request.target.agentId)
     if (!agent) throw new Error(`unknown Agent id: ${request.target.agentId}`)
@@ -264,7 +271,45 @@ export class CoreService {
     if (request.target.scope === 'project' && !project) throw new Error('unknown project id')
     const projectRoot = project?.path ?? homedir()
     const targetRoot = this.core.resolveAgentAssetRoot(agent as unknown as CoreAgent, request.target.scope, projectRoot, sourceAsset.type)
-    return this.core.planOperation({ kind: request.kind, asset: sourceAsset as unknown as CoreAsset, sourceBranch: this.selectedBranch ?? 'main', targetRoot, method: request.method, allowSymlink: this.repository?.allowSymlink ?? true, allowedRoot: targetRoot }) as unknown as OperationPlan
+    const repository = await this.resolveSource().catch(() => null)
+    const planned = await this.core.planOperation({ kind: request.kind, asset: sourceAsset as unknown as CoreAsset, sourceBranch: this.selectedBranch ?? 'main', targetRoot, method: request.method, allowSymlink: repository?.allowSymlink ?? this.repository?.allowSymlink ?? true, allowedRoot: targetRoot }) as unknown as OperationPlan
+    this.planned.set(planned.id, { plan: planned, controller: new AbortController(), createdAt: Date.now() })
+    return planned
   }
-  async execute(plan: OperationPlan): Promise<OperationResult> { return this.core.executeOperation(plan as never) as unknown as OperationResult }
+  async execute(planId: string, options?: { signal?: AbortSignal; onProgress?: (progress: import('../../shared/ipc.js').OperationProgress) => void }): Promise<OperationResult> {
+    this.prunePlans()
+    const task = this.planned.get(planId)
+    if (!task) throw new Error('unknown or expired plan id')
+    try {
+      const result = await this.core.executeOperation(task.plan as never, { signal: options?.signal ?? task.controller.signal, onProgress: options?.onProgress }) as unknown as OperationResult
+      await this.rescanAffected(result.affectedPaths)
+      return result
+    } finally {
+      this.planned.delete(planId)
+    }
+  }
+  async cancel(planId: string, _options?: { signal?: AbortSignal }): Promise<void> {
+    this.prunePlans()
+    const task = this.planned.get(planId)
+    if (!task) throw new Error('unknown or expired plan id')
+    task.controller.abort()
+  }
+  async planOperation(request: OperationRequest): Promise<OperationPlan> { return this.plan(request) }
+  async executeOperation(planId: string, options?: { signal?: AbortSignal; onProgress?: (progress: import('../../shared/ipc.js').OperationProgress) => void }): Promise<OperationResult> { return this.execute(planId, options) }
+  private prunePlans(): void {
+    const now = Date.now()
+    for (const [id, task] of this.planned) {
+      if (now - task.createdAt >= this.planExpiryMs) {
+        task.controller.abort()
+        this.planned.delete(id)
+      }
+    }
+  }
+  async rescanAffected(_paths: string[]): Promise<void> {
+    this.catalog.clear(); this.metadata.clear(); this.locations.clear()
+    await this.scan({ kind: 'central' }).catch(() => [])
+    await this.scan({ kind: 'global' }).catch(() => [])
+    const projects = await this.listProjects()
+    for (const project of projects) await this.scan({ kind: 'project', projectId: project.id }).catch(() => [])
+  }
 }

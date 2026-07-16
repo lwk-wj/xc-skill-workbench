@@ -20,7 +20,7 @@ const defaultLoadStatuses: StatusLoader = (selection) => window.xcSkills.assets.
 
 function ActionButtons({ asset, location, onAction }: { asset: AssetRecord; location: StatusLocation; onAction?: Action }) {
   const status = location.status.status
-  const button = (label: string, kind: string) => <button type="button" onClick={() => onAction?.(kind, location)}>{label}</button>
+  const button = (label: string, kind: string) => <button type="button" data-operation-kind={kind} aria-label={`${label} ${asset.name}`} onClick={() => onAction?.(kind, location)}>{label}</button>
   if (status === 'not_installed') return button('安装到…', 'install')
   if (status === 'update_available') return button('更新', 'update')
   if (status === 'locally_modified') return button('查看影响并更新', 'update-with-warning')
