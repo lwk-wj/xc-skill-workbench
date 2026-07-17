@@ -45,6 +45,23 @@
   --shadow-md: 0 14px 34px rgb(31 42 61 / 13%);
   --shadow-lg: 0 26px 70px rgb(18 27 42 / 24%);
   --muted: var(--text-secondary);
+
+  /* Keep Element Plus controls aligned with the desktop design tokens. */
+  --el-color-primary: var(--accent);
+  --el-bg-color: var(--surface-raised);
+  --el-bg-color-overlay: var(--surface-raised);
+  --el-fill-color-blank: var(--control-surface);
+  --el-fill-color-light: var(--surface-hover);
+  --el-fill-color-lighter: var(--surface-muted);
+  --el-border-color: var(--border);
+  --el-border-color-light: var(--border);
+  --el-border-color-lighter: var(--divider);
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-secondary);
+  --el-text-color-secondary: var(--text-tertiary);
+  --el-text-color-placeholder: var(--text-tertiary);
+  --el-mask-color: var(--overlay);
+  --el-border-radius-base: 8px;
 }
 
 :root[data-theme="dark"] {

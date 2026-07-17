@@ -438,6 +438,10 @@ h3 {
   gap: 7px;
 }
 
+.filter-control .el-select {
+  width: 118px;
+}
+
 .theme-control select,
 .operation-dialog select {
   appearance: none;
@@ -600,6 +604,21 @@ h3 {
   background: transparent;
   content: "";
   transition: background 140ms ease;
+}
+
+.asset-title-line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.platform-tag {
+  flex: none;
+}
+
+.status-tag {
+  flex: none;
 }
 
 .asset-row:hover {

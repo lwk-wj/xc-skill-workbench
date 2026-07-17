@@ -1,0 +1,76 @@
+// @vitest-environment jsdom
+import '@testing-library/jest-dom/vitest'
+import { cleanup, screen, waitFor, within } from '@testing-library/vue'
+import userEvent from '@testing-library/user-event'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import VueApp from '../../src/renderer/src/VueApp.vue'
+import { renderTestApp } from '../../src/renderer/src/app/render-test-app'
+
+const skill = {
+  id: 'skill-one', type: 'skills', name: 'Skill One', group: '开发', path: '/central/skill-one', entryPath: '/central/skill-one/SKILL.md',
+  entryState: 'active', description: 'first skill', version: '1.0.0',
+} as const
+
+const duplicates = [
+  { ...skill, id: 'codex:skill-one', name: 'call-api', agentId: 'codex', path: '/project/.codex/skills/call-api', entryPath: '/project/.codex/skills/call-api/SKILL.md' },
+  { ...skill, id: 'claude-code:skill-one', name: 'call-api', agentId: 'claude-code', path: '/project/.claude/skills/call-api', entryPath: '/project/.claude/skills/call-api/SKILL.md' },
+]
+
+function makeApi() {
+  return {
+    projects: {
+      list: vi.fn().mockResolvedValue([{ id: 'proj', name: 'Demo', path: '/tmp/demo' }]),
+      chooseAndAdd: vi.fn().mockResolvedValue(null), remove: vi.fn().mockResolvedValue(undefined),
+    },
+    agents: {
+      list: vi.fn().mockResolvedValue([
+        { id: 'codex', name: 'Codex', projectBaseDir: '.codex', globalBaseDir: '/tmp/.codex', assetDirs: { skills: 'skills', rules: 'rules', workflows: 'workflows' }, builtIn: true, enabled: true },
+        { id: 'claude-code', name: 'Claude Code', projectBaseDir: '.claude', globalBaseDir: '/tmp/.claude', assetDirs: { skills: 'skills', rules: 'rules', workflows: 'workflows' }, builtIn: true, enabled: true },
+      ]),
+      saveCustom: vi.fn(), removeCustom: vi.fn(),
+    },
+    repositories: {
+      listBranches: vi.fn().mockResolvedValue([
+        { name: 'main', current: true, default: true, remote: false },
+        { name: 'feature/demo', current: false, default: false, remote: false },
+      ]),
+      selectBranch: vi.fn().mockResolvedValue({ branch: 'feature/demo', kind: 'branch-cache', allowSymlink: true, stale: false, cachedAt: null }),
+      setDefaultBranch: vi.fn(),
+    },
+    assets: {
+      scan: vi.fn().mockImplementation(async (source: { kind: string }) => source.kind === 'central' ? [skill] : duplicates),
+    },
+    preferences: {
+      getTheme: vi.fn().mockResolvedValue('system'), setTheme: vi.fn(), getLastSource: vi.fn().mockResolvedValue({ kind: 'central' }),
+    },
+  }
+}
+
+describe('Vue resource explorer', () => {
+  afterEach(cleanup)
+  beforeEach(() => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn() })))
+    window.xcSkills = makeApi() as never
+  })
+
+  it('shows platform tags on installed duplicates but not central assets', async () => {
+    const user = userEvent.setup()
+    renderTestApp(VueApp)
+    await waitFor(() => expect(screen.getByText('Skill One')).toBeInTheDocument())
+
+    expect(screen.queryByText('Codex')).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Agent筛选' })).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: /^Demo$/ }))
+    await waitFor(() => expect(screen.getAllByText('call-api')).toHaveLength(2))
+    expect(screen.getByRole('combobox', { name: 'Agent筛选' })).toBeInTheDocument()
+
+    const rows = screen.getAllByRole('listitem')
+    expect(within(rows[0]!).getByText('Codex')).toBeInTheDocument()
+    expect(within(rows[1]!).getByText('Claude Code')).toBeInTheDocument()
+    await user.click(rows[0]!)
+    expect(rows[0]).toHaveClass('selected')
+    await user.click(rows[1]!)
+    expect(rows[1]).toHaveClass('selected')
+  })
+})

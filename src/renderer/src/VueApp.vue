@@ -1,3 +1,26 @@
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
+import SourceSidebar from './components/SourceSidebar.vue'
+import ResourceExplorer from './components/ResourceExplorer.vue'
+import { useExplorerStore } from './stores/explorer'
+import { usePreferencesStore } from './stores/preferences'
+
+const explorer = useExplorerStore()
+const preferences = usePreferencesStore()
+const settingsOpen = ref(false)
+
+onMounted(() => {
+  void preferences.initializeTheme()
+  void explorer.initialize()
+})
+</script>
+
 <template>
-  <main data-testid="vue-app">XC Skills</main>
+  <main class="app-shell" data-testid="app-shell">
+    <SourceSidebar @settings="settingsOpen = true" />
+    <ResourceExplorer />
+    <aside class="detail-pane" aria-label="资源详情">
+      <div v-if="!explorer.selectedAsset" class="detail-empty">选择资源查看详情</div>
+    </aside>
+  </main>
 </template>
