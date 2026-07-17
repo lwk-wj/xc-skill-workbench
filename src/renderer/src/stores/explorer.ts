@@ -1,14 +1,10 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { AgentDefinition, AssetRecord, ProjectRecord, RepositoryBranch, SourceSelection } from '../../../shared/ipc.js'
-import type { AssetType, ExplorerSource } from '../app/types'
+import { plainSource, type AssetType, type ExplorerSource } from '../app/types'
 
 const central: ExplorerSource = { id: 'central', kind: 'central', label: '中央仓库' }
 const globalSource: ExplorerSource = { id: 'global', kind: 'global', label: '全局安装' }
-
-const sourceSelection = (source: ExplorerSource): SourceSelection => source.kind === 'project'
-  ? { kind: 'project', projectId: source.projectId }
-  : { kind: source.kind }
 
 const projectSource = (project: ProjectRecord): ExplorerSource => ({
   kind: 'project', projectId: project.id, id: `project:${project.id}`, label: project.name, path: project.path,
@@ -53,7 +49,7 @@ export const useExplorerStore = defineStore('explorer', () => {
     loading.value = true
     error.value = null
     try {
-      const nextAssets = await window.xcSkills.assets.scan(sourceSelection(source))
+      const nextAssets = await window.xcSkills.assets.scan(plainSource(source))
       if (id !== requestId) return
       assets.value = nextAssets
       selectedAssetId.value = priorSelected && nextAssets.some((asset) => asset.id === priorSelected) ? priorSelected : null

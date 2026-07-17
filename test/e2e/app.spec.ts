@@ -23,6 +23,10 @@ test.describe('desktop smoke workflows', () => {
 
   test('switching branches leaves the configured checkout untouched', async ({ e2e }) => {
     await e2e.page.getByRole('button', { name: '选择分支' }).click()
+    await expect(e2e.page.getByRole('menuitem', { name: 'feature/demo' })).toBeVisible()
+    await e2e.page.getByRole('heading', { name: '中央仓库' }).click()
+    await expect(e2e.page.getByRole('menuitem', { name: 'feature/demo' })).toBeHidden()
+    await e2e.page.getByRole('button', { name: '选择分支' }).click()
     await e2e.page.getByRole('menuitem', { name: 'feature/demo' }).click()
     await expect(e2e.page.getByText('分支：feature/demo⌄')).toBeVisible()
     await expect(readFile(`${e2e.repo}/.git/HEAD`, 'utf8')).resolves.toContain('refs/heads/main')

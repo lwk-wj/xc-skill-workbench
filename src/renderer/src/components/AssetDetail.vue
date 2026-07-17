@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { ElButton, ElTabPane, ElTabs } from 'element-plus'
 import type { AssetDetail as AssetDetailRecord, AssetRecord, AssetSelection, AssetStatusRecord, InstallMethod, SourceSelection } from '../../../shared/ipc.js'
 import { handleSafeMarkdownClick, renderSafeMarkdown } from '../lib/markdown'
+import { plainSource } from '../app/types'
 import AssetFileTree from './AssetFileTree.vue'
 
 const MAX_TEXT_BYTES = 1024 * 1024
@@ -72,7 +73,7 @@ const load = async (): Promise<void> => {
   statuses.value = []
   error.value = null
   tab.value = 'preview'
-  const selection: AssetSelection = { source: props.source, assetId: props.asset.id }
+  const selection: AssetSelection = { source: plainSource(props.source), assetId: props.asset.id }
   try {
     const [nextDetail, nextStatuses] = await Promise.all([
       (props.loadDetail ?? defaultLoadDetail)(selection),

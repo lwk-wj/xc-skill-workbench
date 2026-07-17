@@ -8,6 +8,7 @@ import SettingsDialog from './features/settings/SettingsDialog.vue'
 import { useExplorerStore } from './stores/explorer'
 import { useOperationStore } from './stores/operation'
 import { usePreferencesStore } from './stores/preferences'
+import { plainSource } from './app/types'
 import type { OperationKind, SourceSelection } from '../../shared/ipc.js'
 
 const explorer = useExplorerStore()
@@ -17,9 +18,7 @@ const settingsOpen = ref(false)
 
 type DetailLocation = Awaited<ReturnType<NonNullable<Window['xcSkills']>['assets']['statuses']>>[number]
 const operationKinds = new Set<OperationKind>(['install', 'update', 'uninstall', 'freeze', 'thaw'])
-const currentSource = (): SourceSelection => explorer.selectedSource.kind === 'project'
-  ? { kind: 'project', projectId: explorer.selectedSource.projectId }
-  : { kind: explorer.selectedSource.kind }
+const currentSource = (): SourceSelection => plainSource(explorer.selectedSource)
 const openOperation = (requestedKind: string, location: DetailLocation): void => {
   if (!explorer.selectedAsset || requestedKind === 'diagnose') return
   const normalized = requestedKind === 'update-with-warning' ? 'update' : requestedKind

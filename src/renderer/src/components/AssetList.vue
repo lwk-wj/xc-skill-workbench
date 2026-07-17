@@ -55,7 +55,7 @@ const statusType = (status: AssetRecord['entryState']): 'success' | 'warning' | 
         </span>
         <small>{{ asset.group }} · {{ asset.description }}</small>
       </span>
-      <ElTag class="status-tag" :type="statusType(asset.entryState)" effect="dark" size="small">{{ statusLabel(asset.entryState) }}</ElTag>
+      <ElTag class="status-tag" :type="statusType(asset.entryState)" effect="plain" size="small">{{ statusLabel(asset.entryState) }}</ElTag>
     </button>
   </div>
 </template>

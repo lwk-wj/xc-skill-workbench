@@ -5,6 +5,7 @@ import ElementPlus from 'element-plus'
 import { cleanup, render, screen, waitFor } from '@testing-library/vue'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { isProxy } from 'vue'
 import OperationDialog from '../../src/renderer/src/features/operations/OperationDialog.vue'
 import { useOperationStore } from '../../src/renderer/src/stores/operation'
 import type { OperationPlan, OperationProgress } from '../../src/shared/ipc.js'
@@ -49,6 +50,7 @@ describe('Vue operation dialog', () => {
       asset: { source: { kind: 'project', projectId: 'proj' }, assetId: 'codex:skill-one' },
       target: { scope: 'project', projectId: 'proj', agentId: 'claude-code' },
     }))
+    expect(isProxy(plan.mock.calls.at(-1)?.[0].asset.source)).toBe(false)
     render(OperationDialog, { global: { plugins: [pinia, ElementPlus] } })
     await waitFor(() => expect(screen.getByText('/project/.codex/skills/Skill One')).toBeInTheDocument())
     expect(screen.getByText('/project/.claude/skills/Skill One')).toBeInTheDocument()

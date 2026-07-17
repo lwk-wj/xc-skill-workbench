@@ -6,6 +6,26 @@ import { AppStore } from '../../src/main/services/app-store.js'
 import { CoreService } from '../../src/main/services/core-service.js'
 
 describe('CoreService', () => {
+  it('keeps the core scan record when loading asset details', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-detail-'))
+    const skillRoot = join(root, 'skills', 'detail-skill')
+    await mkdir(skillRoot, { recursive: true })
+    await writeFile(join(skillRoot, 'SKILL.md'), '---\ndescription: Detail test\n---\n\n# Detail Skill\n')
+    const service = new CoreService({
+      appStore: new AppStore(join(root, 'state.json')),
+      core: {
+        readConfig: async () => ({ mode: 'local', defaultBranch: 'main' }),
+        resolveRepositorySource: async () => ({ root, branch: 'main', kind: 'local-worktree', allowSymlink: true, stale: false, cachedAt: null }),
+      },
+    })
+
+    const [asset] = await service.scan({ kind: 'central' })
+    const detail = await service.detail({ source: { kind: 'central' }, assetId: asset!.id })
+
+    expect(detail.markdown).toContain('# Detail Skill')
+    await rm(root, { recursive: true, force: true })
+  })
+
   it('qualifies installed asset ids by Agent so duplicate names remain selectable', async () => {
     const root = await mkdtemp(join(tmpdir(), 'xc-desktop-identities-'))
     const codexRoot = join(root, 'codex', 'skills')

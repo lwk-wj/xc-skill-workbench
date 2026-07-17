@@ -58,6 +58,7 @@ export class CoreService {
   private selectedBranch: string | null = null
   private repository: Awaited<ReturnType<typeof resolveRepositorySource>> | null = null
   private readonly catalog = new Map<string, AssetRecord>()
+  private readonly coreCatalog = new Map<string, CoreAsset>()
   private readonly metadata = new Map<string, CatalogMeta>()
   private readonly locations = new Map<string, Array<{ asset: AssetRecord; meta: CatalogMeta }>>()
   private readonly planned = new Map<string, { plan: OperationPlan; controller: AbortController; createdAt: number }>()
@@ -151,6 +152,7 @@ export class CoreService {
           : coreAsset
         const key = keyFor(source, asset.id)
         this.catalog.set(key, asset)
+        this.coreCatalog.set(key, raw)
         this.metadata.set(key, { source, projectId, agentId, method: null })
         const locations = this.locations.get(key) ?? []
         locations.push({ asset, meta: { source, projectId, agentId, method: null } })
@@ -169,6 +171,7 @@ export class CoreService {
   async scan(source: SourceSelection): Promise<AssetRecord[]> {
     await this.appStore.setLastSource(source)
     this.catalog.forEach((_value, key) => { if (key.startsWith(`${JSON.stringify(source)}:`)) this.catalog.delete(key) })
+    this.coreCatalog.forEach((_value, key) => { if (key.startsWith(`${JSON.stringify(source)}:`)) this.coreCatalog.delete(key) })
     this.locations.forEach((_value, key) => { if (key.startsWith(`${JSON.stringify(source)}:`)) this.locations.delete(key) })
     const result: AssetRecord[] = []
     if (source.kind === 'central') {
@@ -208,7 +211,8 @@ export class CoreService {
   }
   async detail(selection: AssetSelection): Promise<AssetDetail> {
     const asset = await this.getCatalogAsset(selection)
-    return AssetDetailSchema.parse(await this.core.readAssetDetail(asset as unknown as CoreAsset))
+    const coreAsset = this.coreCatalog.get(keyFor(selection.source, selection.assetId)) ?? asset as unknown as CoreAsset
+    return AssetDetailSchema.parse(await this.core.readAssetDetail(coreAsset))
   }
   async statuses(selection: AssetSelection): Promise<Array<{ projectId: string | null; agentId: string; path: string; method: 'copy' | 'symlink' | null; status: DesktopStatus }>> {
     const installed = await this.getCatalogAsset(selection)
@@ -221,9 +225,10 @@ export class CoreService {
       return Promise.all(locations.map(async (location) => ({ ...location, method: await this.installMethod(location.path), status: unknownStatus('中央分支不存在同名资产') })))
     }
 
+    const centralCoreAsset = this.coreCatalog.get(keyFor({ kind: 'central' }, central.id)) ?? central as unknown as CoreAsset
     const evaluate = async (location: { projectId: string | null; agentId: string; path: string }): Promise<{ projectId: string | null; agentId: string; path: string; method: 'copy' | 'symlink' | null; status: DesktopStatus }> => {
       const method = await this.installMethod(location.path)
-      try { return { ...location, method, status: AssetStatusRecordSchema.parse(await this.core.evaluateAssetStatus(central as unknown as CoreAsset, location.path)) } }
+      try { return { ...location, method, status: AssetStatusRecordSchema.parse(await this.core.evaluateAssetStatus(centralCoreAsset, location.path)) } }
       catch { return { ...location, method, status: unknownStatus('无法计算资产状态') } }
     }
     if (selection.source.kind !== 'central') {
@@ -264,9 +269,14 @@ export class CoreService {
   async plan(request: OperationRequest): Promise<OperationPlan> {
     this.prunePlans()
     let sourceAsset = await this.getCatalogAsset(request.asset)
+    let sourceSelection = request.asset
     if (request.kind === 'update' && request.asset.source.kind !== 'central') {
       const centralAssets = await this.scan({ kind: 'central' })
-      sourceAsset = centralAssets.find((candidate) => candidate.type === sourceAsset.type && candidate.group === sourceAsset.group && candidate.name === sourceAsset.name) ?? sourceAsset
+      const centralAsset = centralAssets.find((candidate) => candidate.type === sourceAsset.type && candidate.group === sourceAsset.group && candidate.name === sourceAsset.name)
+      if (centralAsset) {
+        sourceAsset = centralAsset
+        sourceSelection = { source: { kind: 'central' }, assetId: centralAsset.id }
+      }
     }
     const state = await this.appStore.read()
     const agent = (await this.listAgents()).find((item) => item.id === request.target.agentId)
@@ -276,7 +286,8 @@ export class CoreService {
     const projectRoot = project?.path ?? homedir()
     const targetRoot = this.core.resolveAgentAssetRoot(agent as unknown as CoreAgent, request.target.scope, projectRoot, sourceAsset.type)
     const repository = await this.resolveSource().catch(() => null)
-    const planned = await this.core.planOperation({ kind: request.kind, asset: sourceAsset as unknown as CoreAsset, sourceBranch: this.selectedBranch ?? 'main', targetRoot, method: request.method, allowSymlink: repository?.allowSymlink ?? this.repository?.allowSymlink ?? true, allowedRoot: targetRoot }) as unknown as OperationPlan
+    const coreSourceAsset = this.coreCatalog.get(keyFor(sourceSelection.source, sourceSelection.assetId)) ?? sourceAsset as unknown as CoreAsset
+    const planned = await this.core.planOperation({ kind: request.kind, asset: coreSourceAsset, sourceBranch: this.selectedBranch ?? 'main', targetRoot, method: request.method, allowSymlink: repository?.allowSymlink ?? this.repository?.allowSymlink ?? true, allowedRoot: targetRoot }) as unknown as OperationPlan
     this.planned.set(planned.id, { plan: planned, controller: new AbortController(), createdAt: Date.now() })
     return planned
   }
@@ -313,7 +324,7 @@ export class CoreService {
     }
   }
   async rescanAffected(_paths: string[]): Promise<void> {
-    this.catalog.clear(); this.metadata.clear(); this.locations.clear()
+    this.catalog.clear(); this.coreCatalog.clear(); this.metadata.clear(); this.locations.clear()
     await this.scan({ kind: 'central' }).catch(() => [])
     await this.scan({ kind: 'global' }).catch(() => [])
     const projects = await this.listProjects()

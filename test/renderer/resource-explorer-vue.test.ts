@@ -3,6 +3,7 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, screen, waitFor, within } from '@testing-library/vue'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { isProxy } from 'vue'
 import App from '../../src/renderer/src/App.vue'
 import { renderTestApp } from '../../src/renderer/src/app/render-test-app'
 
@@ -75,6 +76,8 @@ describe('Vue resource explorer', () => {
     expect(within(rows[1]!).getByText('Claude Code')).toBeInTheDocument()
     await user.click(rows[0]!)
     expect(rows[0]).toHaveClass('selected')
+    await waitFor(() => expect(window.xcSkills.assets.detail).toHaveBeenCalled())
+    expect(isProxy(vi.mocked(window.xcSkills.assets.detail).mock.calls.at(-1)?.[0].source)).toBe(false)
     await user.click(rows[1]!)
     expect(rows[1]).toHaveClass('selected')
   })

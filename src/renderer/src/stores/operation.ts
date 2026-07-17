@@ -4,6 +4,7 @@ import type {
   AgentDefinition, AssetRecord, InstallMethod, OperationKind, OperationPlan, OperationProgress,
   OperationRequest, OperationResult, ProjectRecord, SourceSelection,
 } from '../../../shared/ipc.js'
+import { plainSource } from '../app/types'
 
 export type OperationStage = 'closed' | 'preview' | 'confirm' | 'executing' | 'done'
 export type OperationLocation = { projectId: string | null; agentId: string; path: string }
@@ -88,7 +89,7 @@ export const useOperationStore = defineStore('operation', () => {
     try {
       const nextPlans = await Promise.all(targets.map((target) => window.xcSkills.operations.plan({
         kind: kind.value,
-        asset: { source: source.value, assetId: selectedAsset.id },
+        asset: { source: plainSource(source.value), assetId: selectedAsset.id },
         target,
         method: kind.value === 'install' || kind.value === 'update' ? method.value : null,
         overwriteModified: false,
