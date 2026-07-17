@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, screen, waitFor, within } from '@testing-library/vue'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import VueApp from '../../src/renderer/src/VueApp.vue'
+import App from '../../src/renderer/src/App.vue'
 import { renderTestApp } from '../../src/renderer/src/app/render-test-app'
 
 const skill = {
@@ -60,7 +60,7 @@ describe('Vue resource explorer', () => {
 
   it('shows platform tags on installed duplicates but not central assets', async () => {
     const user = userEvent.setup()
-    renderTestApp(VueApp)
+    renderTestApp(App)
     await waitFor(() => expect(screen.getByText('Skill One')).toBeInTheDocument())
 
     expect(screen.queryByText('Codex')).toBeNull()

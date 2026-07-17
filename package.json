@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "typecheck": "tsc -p tsconfig.node.json --noEmit && vue-tsc -p tsconfig.web.json --noEmit",
     "typecheck:vue": "vue-tsc -p tsconfig.web.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -23,23 +23,16 @@
     "element-plus": "^2.14.3",
     "marked": "18.0.6",
     "pinia": "^4.0.2",
-    "react": "19.2.7",
-    "react-dom": "19.2.7",
     "vue": "^3.5.40",
     "xc-skills": "file:../../Desktop/XcSkill/xc-skills",
-    "zod": "4.4.3",
-    "zustand": "5.0.14"
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",
     "@testing-library/jest-dom": "6.9.1",
-    "@testing-library/react": "16.3.2",
     "@testing-library/user-event": "14.6.1",
     "@testing-library/vue": "^8.1.0",
     "@types/node": "22.20.1",
-    "@types/react": "19.2.17",
-    "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "5.2.0",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/test-utils": "^2.4.11",
     "electron": "43.1.1",
