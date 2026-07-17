@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import AssetDetail from './components/AssetDetail.vue'
 import SourceSidebar from './components/SourceSidebar.vue'
 import ResourceExplorer from './components/ResourceExplorer.vue'
+import SettingsDialog from './features/settings/SettingsDialog.vue'
 import { useExplorerStore } from './stores/explorer'
 import { usePreferencesStore } from './stores/preferences'
 
@@ -28,5 +29,6 @@ onMounted(() => {
       />
       <div v-if="!explorer.selectedAsset" class="detail-empty">选择资源查看详情</div>
     </aside>
+    <SettingsDialog v-model="settingsOpen" @agents-changed="explorer.refreshAgents()" />
   </main>
 </template>

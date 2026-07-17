@@ -2,6 +2,7 @@
 import { ElDropdown, ElDropdownItem, ElDropdownMenu, ElInput, ElOption, ElSelect } from 'element-plus'
 import { useExplorerStore } from '../stores/explorer'
 import AssetList from './AssetList.vue'
+import ErrorNotice from './ErrorNotice.vue'
 import type { AssetType } from '../app/types'
 
 const explorer = useExplorerStore()
@@ -49,7 +50,7 @@ const chooseBranch = (branch: string): void => { void explorer.selectBranch(bran
         </ElSelect></label>
       </div>
     </header>
-    <section v-if="explorer.error" class="error-notice" role="alert"><strong>操作失败</strong><p>{{ explorer.error }}</p></section>
+    <ErrorNotice v-if="explorer.error" :error="explorer.error" :on-retry="explorer.refreshCurrentSource" />
     <AssetList
       :assets="explorer.visibleAssets"
       :selected-id="explorer.selectedAssetId"
