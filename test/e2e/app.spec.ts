@@ -31,4 +31,27 @@ test.describe('desktop smoke workflows', () => {
     await expect(e2e.page.getByText('分支：feature/demo⌄')).toBeVisible()
     await expect(readFile(`${e2e.repo}/.git/HEAD`, 'utf8')).resolves.toContain('refs/heads/main')
   })
+
+  test('opens readable asset details in a wide drawer', async ({ e2e }) => {
+    const columnCount = await e2e.page.getByTestId('app-shell').evaluate((element) => (
+      getComputedStyle(element).gridTemplateColumns.split(' ').length
+    ))
+    expect(columnCount).toBe(2)
+
+    const row = e2e.page.getByRole('listitem').filter({ hasText: 'demo' }).first()
+    await row.click()
+    const drawer = e2e.page.getByRole('dialog', { name: 'demo' })
+    await expect(drawer).toBeVisible()
+    await expect(drawer.getByRole('tab', { name: '预览' })).toBeVisible()
+
+    const width = await drawer.evaluate((element) => element.getBoundingClientRect().width)
+    expect(width).toBeGreaterThanOrEqual(600)
+
+    await drawer.getByRole('button', { name: /close/i }).click()
+    await expect(drawer).toBeHidden()
+    await expect(row).toHaveClass(/selected/)
+
+    await row.click()
+    await expect(drawer).toBeVisible()
+  })
 })
