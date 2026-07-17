@@ -88,6 +88,7 @@ export const useExplorerStore = defineStore('explorer', () => {
   }
 
   const selectSource = async (source: ExplorerSource): Promise<void> => {
+    selectedAssetId.value = null
     selectedSource.value = source
     query.value = ''
     groupFilter.value = 'all'
@@ -137,6 +138,7 @@ export const useExplorerStore = defineStore('explorer', () => {
       projects.value = projects.value.filter((project) => project.id !== id)
       sources.value = [central, globalSource, ...projects.value.map(projectSource)]
       if (selectedSource.value.kind === 'project' && selectedSource.value.projectId === id) {
+        selectedAssetId.value = null
         selectedSource.value = central
         await scan(central)
       }

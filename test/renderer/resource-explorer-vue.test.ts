@@ -81,4 +81,17 @@ describe('Vue resource explorer', () => {
     await user.click(rows[1]!)
     expect(rows[1]).toHaveClass('selected')
   })
+
+  it('clears the selected asset before changing sources', async () => {
+    const user = userEvent.setup()
+    renderTestApp(App)
+    await user.click(await screen.findByText('Skill One'))
+    await waitFor(() => expect(window.xcSkills.assets.detail).toHaveBeenCalled())
+    vi.mocked(window.xcSkills.assets.detail).mockClear()
+
+    await user.click(screen.getByRole('button', { name: /^Demo$/ }))
+    await waitFor(() => expect(screen.getAllByText('call-api')).toHaveLength(2))
+
+    expect(window.xcSkills.assets.detail).not.toHaveBeenCalled()
+  })
 })
