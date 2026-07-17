@@ -39,10 +39,15 @@ function makeApi() {
     },
     assets: {
       scan: vi.fn().mockImplementation(async (source: { kind: string }) => source.kind === 'central' ? [skill] : duplicates),
+      detail: vi.fn().mockImplementation(async ({ assetId }: { assetId: string }) => ({
+        ...(assetId.startsWith('codex:') ? duplicates[0] : duplicates[1]), markdown: '# call-api', evolution: null, files: [],
+      })),
+      statuses: vi.fn().mockResolvedValue([]),
     },
     preferences: {
       getTheme: vi.fn().mockResolvedValue('system'), setTheme: vi.fn(), getLastSource: vi.fn().mockResolvedValue({ kind: 'central' }),
     },
+    system: { openExternal: vi.fn().mockResolvedValue(undefined) },
   }
 }
 

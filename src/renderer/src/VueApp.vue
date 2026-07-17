@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import AssetDetail from './components/AssetDetail.vue'
 import SourceSidebar from './components/SourceSidebar.vue'
 import ResourceExplorer from './components/ResourceExplorer.vue'
 import { useExplorerStore } from './stores/explorer'
@@ -20,6 +21,11 @@ onMounted(() => {
     <SourceSidebar @settings="settingsOpen = true" />
     <ResourceExplorer />
     <aside class="detail-pane" aria-label="资源详情">
+      <AssetDetail
+        v-if="explorer.selectedAsset"
+        :asset="explorer.selectedAsset"
+        :source="explorer.selectedSource"
+      />
       <div v-if="!explorer.selectedAsset" class="detail-empty">选择资源查看详情</div>
     </aside>
   </main>
