@@ -18,12 +18,16 @@ export const test = base.extend<{ e2e: E2EContext }>({
     const home = join(root, 'home')
     const config = join(home, '.xc-skills-config.json')
     await mkdir(join(project, '.github'), { recursive: true })
+    await mkdir(join(project, '.claude', 'skills', 'call-api'), { recursive: true })
     await mkdir(join(repo, 'skills', 'demo'), { recursive: true })
     await mkdir(join(repo, 'skills', 'sibling'), { recursive: true })
+    await mkdir(join(home, '.codex', 'skills', 'call-api'), { recursive: true })
     await mkdir(home, { recursive: true })
     await mkdir(userData, { recursive: true })
     await writeFile(join(repo, 'skills', 'demo', 'SKILL.md'), '# Demo skill\n\nFixture skill for E2E verification.\n')
     await writeFile(join(repo, 'skills', 'sibling', 'SKILL.md'), '# Sibling skill\n')
+    await writeFile(join(home, '.codex', 'skills', 'call-api', 'SKILL.md'), '# call-api\n\nCodex global fixture.\n')
+    await writeFile(join(project, '.claude', 'skills', 'call-api', 'SKILL.md'), '# call-api\n\nClaude project fixture.\n')
     await execFile('git', ['init', '-b', 'main'], { cwd: repo })
     await execFile('git', ['config', 'user.email', 'e2e@example.invalid'], { cwd: repo })
     await execFile('git', ['config', 'user.name', 'XC Skills E2E'], { cwd: repo })
@@ -47,8 +51,18 @@ export const test = base.extend<{ e2e: E2EContext }>({
     try {
       await use({ app, page, root, repo, project, config })
     } finally {
-      await app.close().catch(() => undefined)
-      await rm(root, { recursive: true, force: true })
+      const electronProcess = app.process()
+      const closed = app.close().then(() => true).catch(() => false)
+      const graceful = await Promise.race([
+        closed,
+        new Promise<false>((resolveTimeout) => setTimeout(() => resolveTimeout(false), 5_000)),
+      ])
+      if (!graceful) {
+        const exited = new Promise<void>((resolveExit) => electronProcess.once('exit', () => resolveExit()))
+        electronProcess.kill('SIGKILL')
+        await Promise.race([exited, new Promise<void>((resolveTimeout) => setTimeout(resolveTimeout, 5_000))])
+      }
+      await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
     }
   },
 })
