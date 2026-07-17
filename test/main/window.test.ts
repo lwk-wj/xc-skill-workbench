@@ -7,7 +7,7 @@ describe('createWindowOptions', () => {
       preload: '/tmp/preload.js',
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      sandbox: false,
       webSecurity: true,
     })
   })
