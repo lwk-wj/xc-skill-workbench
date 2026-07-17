@@ -8,6 +8,7 @@ import { OperationDialog } from '../features/operations/OperationDialog'
 import { SettingsView } from '../features/settings/SettingsView'
 import { useThemePreference } from '../features/settings/ThemeControl'
 import { ErrorNotice } from '../components/ErrorNotice'
+import { FilterSelect } from '../components/FilterSelect'
 import type { OperationKind } from '../../../shared/ipc.js'
 
 type OperationLocation = { projectId: string | null; agentId: string; path: string }
@@ -36,9 +37,9 @@ export function App() {
           <label className="search"><span className="sr-only">搜索资源</span><input aria-label="搜索资源" role="searchbox" placeholder="搜索资源" value={state.query} onChange={(event) => state.setQuery(event.target.value)} /></label>
         </div>
         <div className="filters">
-          <label>分组<select aria-label="分组筛选" value={state.groupFilter} onChange={(event) => state.setGroupFilter(event.target.value)}>{groups.map((group) => <option key={group} value={group}>{group === 'all' ? '全部分组' : group}</option>)}</select></label>
-          <label>状态<select aria-label="状态筛选" value={state.statusFilter} onChange={(event) => state.setStatusFilter(event.target.value)}><option value="all">全部状态</option><option value="active">正常</option><option value="frozen">已冻结</option><option value="conflict">冲突</option><option value="invalid">无效</option></select></label>
-          {state.selectedSource.kind !== 'central' && <label>Agent<select aria-label="Agent筛选" value={state.agentFilter} onChange={(event) => state.setAgentFilter(event.target.value)}><option value="all">全部 Agent</option>{state.agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></label>}
+          <FilterSelect label="分组" value={state.groupFilter} options={groups.map((group) => ({ value: group, label: group === 'all' ? '全部分组' : group }))} onChange={state.setGroupFilter} />
+          <FilterSelect label="状态" value={state.statusFilter} options={[{ value: 'all', label: '全部状态' }, { value: 'active', label: '正常' }, { value: 'frozen', label: '已冻结' }, { value: 'conflict', label: '冲突' }, { value: 'invalid', label: '无效' }]} onChange={state.setStatusFilter} />
+          {state.selectedSource.kind !== 'central' && <FilterSelect label="Agent" value={state.agentFilter} options={[{ value: 'all', label: '全部 Agent' }, ...state.agents.map((agent) => ({ value: agent.id, label: agent.name }))]} onChange={state.setAgentFilter} />}
         </div>
       </header>
       {state.error && <ErrorNotice error={state.error} />}

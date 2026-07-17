@@ -54,6 +54,36 @@ describe('resource explorer', () => {
     expect(await screen.findByRole('combobox', { name: 'Agent筛选' })).toBeTruthy()
   })
 
+  it('renders filter choices in an anchored application menu', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await waitFor(() => expect(screen.getByText('Skill One')).toBeTruthy())
+
+    const statusFilter = screen.getByRole('combobox', { name: '状态筛选' })
+    expect(statusFilter.tagName).toBe('BUTTON')
+
+    await user.click(statusFilter)
+    expect(screen.getByRole('listbox', { name: '状态筛选选项' })).toBeTruthy()
+
+    await user.click(screen.getByRole('option', { name: '正常' }))
+    expect(screen.queryByRole('listbox', { name: '状态筛选选项' })).toBeNull()
+
+    await user.click(statusFilter)
+    await user.click(screen.getByRole('option', { name: '全部状态' }))
+  })
+
+  it('closes the branch menu when clicking outside it', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await waitFor(() => expect(screen.getByText('Skill One')).toBeTruthy())
+
+    await user.click(screen.getByRole('button', { name: '选择分支' }))
+    expect(screen.getByRole('listbox', { name: '选择分支' })).toBeTruthy()
+
+    await user.click(screen.getByRole('searchbox', { name: '搜索资源' }))
+    expect(screen.queryByRole('listbox', { name: '选择分支' })).toBeNull()
+  })
+
   it('loads Central assets, filters/searches, selects branches, and manages projects', async () => {
     const user = userEvent.setup()
     render(<App />)
