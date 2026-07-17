@@ -19,8 +19,10 @@ const props = withDefaults(defineProps<{
   source?: SourceSelection
   loadDetail?: DetailLoader
   loadStatuses?: StatusLoader
+  showHeader?: boolean
 }>(), {
   source: () => ({ kind: 'central' }),
+  showHeader: true,
 })
 
 const emit = defineEmits<{ action: [kind: string, location: StatusLocation] }>()
@@ -97,7 +99,7 @@ watch(
 
 <template>
   <section class="asset-detail" aria-label="资源详情">
-    <header class="asset-detail-header">
+    <header v-if="showHeader" class="asset-detail-header">
       <h2>{{ asset.name }}</h2>
       <small>{{ asset.group }} · {{ asset.version ?? '无版本' }}</small>
     </header>

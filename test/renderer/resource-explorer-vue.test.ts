@@ -94,4 +94,19 @@ describe('Vue resource explorer', () => {
 
     expect(window.xcSkills.assets.detail).not.toHaveBeenCalled()
   })
+
+  it('opens asset details in a drawer and preserves the selection when closed', async () => {
+    const user = userEvent.setup()
+    renderTestApp(App)
+    const rowLabel = await screen.findByText('Skill One')
+
+    await user.click(rowLabel)
+    const drawer = await screen.findByRole('dialog', { name: 'Skill One' })
+    expect(drawer).toBeInTheDocument()
+    expect(screen.queryByText('选择资源查看详情')).toBeNull()
+
+    await user.click(within(drawer).getByRole('button', { name: /close/i }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Skill One' })).toBeNull())
+    expect(rowLabel.closest('[role="listitem"]')).toHaveClass('selected')
+  })
 })

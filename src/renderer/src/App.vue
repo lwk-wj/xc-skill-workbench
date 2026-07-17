@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
+import { ElDrawer } from 'element-plus'
 import AssetDetail from './components/AssetDetail.vue'
 import SourceSidebar from './components/SourceSidebar.vue'
 import ResourceExplorer from './components/ResourceExplorer.vue'
@@ -15,6 +16,11 @@ const explorer = useExplorerStore()
 const operation = useOperationStore()
 const preferences = usePreferencesStore()
 const settingsOpen = ref(false)
+const detailOpen = ref(false)
+
+watch(() => explorer.selectedAsset, (asset) => {
+  if (!asset) detailOpen.value = false
+})
 
 type DetailLocation = Awaited<ReturnType<NonNullable<Window['xcSkills']>['assets']['statuses']>>[number]
 const operationKinds = new Set<OperationKind>(['install', 'update', 'uninstall', 'freeze', 'thaw'])
@@ -43,16 +49,28 @@ onMounted(() => {
 <template>
   <main class="app-shell" data-testid="app-shell">
     <SourceSidebar @settings="settingsOpen = true" />
-    <ResourceExplorer />
-    <aside class="detail-pane" aria-label="资源详情">
+    <ResourceExplorer @asset-selected="detailOpen = true" />
+    <ElDrawer
+      v-model="detailOpen"
+      class="asset-detail-drawer"
+      direction="rtl"
+      size="min(760px, 64vw)"
+      destroy-on-close
+    >
+      <template #header="{ titleId, titleClass }">
+        <div class="asset-detail-header">
+          <h2 :id="titleId" :class="titleClass">{{ explorer.selectedAsset?.name ?? '资源详情' }}</h2>
+          <small v-if="explorer.selectedAsset?.version">· {{ explorer.selectedAsset.version }}</small>
+        </div>
+      </template>
       <AssetDetail
         v-if="explorer.selectedAsset"
         :asset="explorer.selectedAsset"
         :source="explorer.selectedSource"
+        :show-header="false"
         @action="openOperation"
       />
-      <div v-if="!explorer.selectedAsset" class="detail-empty">选择资源查看详情</div>
-    </aside>
+    </ElDrawer>
     <OperationDialog />
     <SettingsDialog v-model="settingsOpen" @agents-changed="explorer.refreshAgents()" />
   </main>

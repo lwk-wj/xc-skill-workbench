@@ -6,6 +6,7 @@ import ErrorNotice from './ErrorNotice.vue'
 import type { AssetType } from '../app/types'
 
 const explorer = useExplorerStore()
+const emit = defineEmits<{ 'asset-selected': [] }>()
 const tabs: Array<{ value: AssetType; label: string }> = [
   { value: 'skills', label: 'Skills' },
   { value: 'rules', label: 'Rules' },
@@ -13,6 +14,10 @@ const tabs: Array<{ value: AssetType; label: string }> = [
 ]
 
 const chooseBranch = (branch: string): void => { void explorer.selectBranch(branch) }
+const selectAsset = (assetId: string): void => {
+  explorer.selectedAssetId = assetId
+  emit('asset-selected')
+}
 </script>
 
 <template>
@@ -62,7 +67,7 @@ const chooseBranch = (branch: string): void => { void explorer.selectBranch(bran
       :group-filter="explorer.groupFilter"
       :status-filter="explorer.statusFilter"
       :agent-filter="explorer.agentFilter"
-      @select="explorer.selectedAssetId = $event"
+      @select="selectAsset"
     />
   </section>
 </template>
