@@ -38,7 +38,7 @@ export function App() {
         <div className="filters">
           <label>分组<select aria-label="分组筛选" value={state.groupFilter} onChange={(event) => state.setGroupFilter(event.target.value)}>{groups.map((group) => <option key={group} value={group}>{group === 'all' ? '全部分组' : group}</option>)}</select></label>
           <label>状态<select aria-label="状态筛选" value={state.statusFilter} onChange={(event) => state.setStatusFilter(event.target.value)}><option value="all">全部状态</option><option value="active">正常</option><option value="frozen">已冻结</option><option value="conflict">冲突</option><option value="invalid">无效</option></select></label>
-          <label>Agent<select aria-label="Agent筛选" value={state.agentFilter} onChange={(event) => state.setAgentFilter(event.target.value)}><option value="all">全部 Agent</option>{state.agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></label>
+          {state.selectedSource.kind !== 'central' && <label>Agent<select aria-label="Agent筛选" value={state.agentFilter} onChange={(event) => state.setAgentFilter(event.target.value)}><option value="all">全部 Agent</option>{state.agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></label>}
         </div>
       </header>
       {state.error && <ErrorNotice error={state.error} />}

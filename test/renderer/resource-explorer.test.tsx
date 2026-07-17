@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from '../../src/renderer/src/app/App'
 
 const skills = [
@@ -40,7 +40,19 @@ function makeApi() {
 }
 
 describe('resource explorer', () => {
+  afterEach(cleanup)
   beforeEach(() => { window.xcSkills = makeApi() as never })
+
+  it('shows the Agent filter only for installed sources', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await waitFor(() => expect(screen.getByText('Skill One')).toBeTruthy())
+
+    expect(screen.queryByRole('combobox', { name: 'Agent筛选' })).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Demo' }))
+    expect(await screen.findByRole('combobox', { name: 'Agent筛选' })).toBeTruthy()
+  })
 
   it('loads Central assets, filters/searches, selects branches, and manages projects', async () => {
     const user = userEvent.setup()

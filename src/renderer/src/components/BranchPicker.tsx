@@ -6,7 +6,7 @@ export function BranchPicker({ branches, selected, onSelect, onSetDefault }: { b
   const optionRefs = useRef<Array<HTMLDivElement | null>>([])
   const current = selected ?? branches.find((branch) => branch.current)?.name ?? 'main'
   return <div className="branch-picker">
-    <button className="branch-button" aria-label="选择分支" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((value) => !value)}>分支：{current}⌄</button>
+    <button className="branch-button" aria-label="选择分支" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((value) => !value)}>分支：<span className="branch-value">{current}</span><span className="select-chevron" aria-hidden="true">⌄</span></button>
     {open && <div className="branch-menu" role="listbox" aria-label="选择分支">
       {branches.map((branch, index) => <div ref={(element) => { optionRefs.current[index] = element }} className="branch-option" role="option" tabIndex={0} aria-label={branch.name} aria-selected={branch.name === current} key={branch.name} onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(branch.name); setOpen(false); return }
