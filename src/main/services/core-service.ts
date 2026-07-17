@@ -145,7 +145,10 @@ export class CoreService {
       const assets = (await this.core.scanAssets({ root })) as CoreAsset[]
       const result: AssetRecord[] = []
       for (const raw of assets) {
-        const asset = asDesktopAsset(agentId ? { ...raw, agentId } : raw)
+        const coreAsset = asDesktopAsset(raw)
+        const asset = agentId
+          ? asDesktopAsset({ ...coreAsset, id: `${agentId}:${coreAsset.id}`, agentId })
+          : coreAsset
         const key = keyFor(source, asset.id)
         this.catalog.set(key, asset)
         this.metadata.set(key, { source, projectId, agentId, method: null })

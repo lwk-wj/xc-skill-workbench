@@ -6,6 +6,38 @@ import { AppStore } from '../../src/main/services/app-store.js'
 import { CoreService } from '../../src/main/services/core-service.js'
 
 describe('CoreService', () => {
+  it('qualifies installed asset ids by Agent so duplicate names remain selectable', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-identities-'))
+    const codexRoot = join(root, 'codex', 'skills')
+    const claudeRoot = join(root, 'claude', 'skills')
+    await mkdir(codexRoot, { recursive: true })
+    await mkdir(claudeRoot, { recursive: true })
+    const assetAt = (path: string) => ({
+      id: 'skills:backend:call-api', type: 'skills' as const, name: 'call-api', group: 'backend',
+      path, entryPath: join(path, 'SKILL.md'), entryState: 'active' as const,
+      description: 'API helper', version: '1.0.0',
+    })
+    const agents = [
+      { id: 'codex', name: 'Codex', projectBaseDir: '.codex', globalBaseDir: join(root, 'codex'), assetDirs: { skills: 'skills', rules: 'rules', workflows: 'workflows' }, builtIn: true, enabled: true },
+      { id: 'claude-code', name: 'Claude Code', projectBaseDir: '.claude', globalBaseDir: join(root, 'claude'), assetDirs: { skills: 'skills', rules: 'rules', workflows: 'workflows' }, builtIn: true, enabled: true },
+    ]
+    const service = new CoreService({
+      appStore: new AppStore(join(root, 'state.json')),
+      core: {
+        BUILTIN_AGENTS: agents,
+        resolveAgentAssetRoot: (agent, _scope, _base, type) => join(agent.globalBaseDir, agent.assetDirs[type]),
+        scanAssets: async ({ root: scanRoot }) => scanRoot === codexRoot || scanRoot === claudeRoot ? [assetAt(join(scanRoot, 'backend', 'call-api'))] : [],
+      },
+    })
+
+    const assets = await service.scan({ kind: 'global' })
+    expect(assets.map((asset) => [asset.id, asset.agentId])).toEqual([
+      ['codex:skills:backend:call-api', 'codex'],
+      ['claude-code:skills:backend:call-api', 'claude-code'],
+    ])
+    await rm(root, { recursive: true, force: true })
+  })
+
   it('canonicalizes projects and keeps branch selection in memory until default is persisted', async () => {
     const root = await mkdtemp(join(tmpdir(), 'xc-desktop-core-'))
     const projectRoot = join(root, 'project')
@@ -59,8 +91,8 @@ describe('CoreService', () => {
         evaluateAssetStatus: async () => status,
       },
     })
-    const selection = { source: { kind: 'global' as const }, assetId: installedAsset.id }
-    const scanned = await service.scan(selection.source)
+    const scanned = await service.scan({ kind: 'global' })
+    const selection = { source: { kind: 'global' as const }, assetId: scanned[0]!.id }
     expect(seenRoots).toContain(globalSkills)
     expect(scanned).toHaveLength(1)
     expect((await service.statuses(selection))[0]?.method).toBe('copy')
