@@ -1541,6 +1541,33 @@ h3 {
   padding: 10px;
 }
 
+.operation-dialog.el-dialog {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.operation-dialog.el-dialog > .el-dialog__header {
+  flex: none;
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 18px 22px;
+}
+
+.operation-dialog.el-dialog > .el-dialog__body {
+  min-height: 0;
+  padding: 22px;
+  overflow: auto;
+}
+
+.operation-dialog .el-checkbox-group,
+.operation-dialog .el-radio-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
