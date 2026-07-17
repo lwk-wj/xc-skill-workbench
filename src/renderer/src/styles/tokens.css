@@ -1,6 +1,166 @@
-:root, :root[data-theme="light"] { font-family: Inter, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; color: #20242b; background: #f6f7f9; --background: #f6f7f9; --surface: #ffffff; --surface-muted: #fbfcfe; --border: #e3e7ee; --text-primary: #20242b; --text-secondary: #697386; --accent: #2563eb; --focus-ring: #60a5fa; --success: #19704a; --warning: #865d00; --danger: #ae2c2c; --code-surface: #f1f5f9; --selection: #eaf1ff; --muted: var(--text-secondary); }
-:root[data-theme="dark"] { color-scheme: dark; color: #e5e7eb; background: #111827; --background: #111827; --surface: #1f2937; --surface-muted: #172033; --border: #374151; --text-primary: #f3f4f6; --text-secondary: #aab4c4; --accent: #80aaff; --focus-ring: #93c5fd; --success: #6ee7b7; --warning: #fcd34d; --danger: #fca5a5; --code-surface: #111827; --selection: #243b69; --muted: var(--text-secondary); }
-* { box-sizing: border-box; }
-button, input, select { font: inherit; }
-button { cursor: pointer; }
-button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+:root,
+:root[data-theme="light"] {
+  font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  color: #202733;
+  background: #f3f5f8;
+  color-scheme: light;
+
+  --background: #f3f5f8;
+  --surface: #ffffff;
+  --surface-muted: #f7f9fc;
+  --surface-raised: #ffffff;
+  --surface-hover: #f0f5ff;
+  --surface-pressed: #e8f0ff;
+  --control-surface: #ffffff;
+  --overlay: rgb(20 28 42 / 42%);
+
+  --border: #dfe5ee;
+  --border-strong: #cad3e0;
+  --divider: #e8edf4;
+
+  --text-primary: #202733;
+  --text-secondary: #5f6c7f;
+  --text-tertiary: #8b97a8;
+  --text-on-accent: #ffffff;
+
+  --accent: #2f6fdb;
+  --accent-hover: #245fc2;
+  --accent-soft: #e9f1ff;
+  --focus-ring: #6ca2f5;
+  --selection: #e7f0ff;
+
+  --success: #247452;
+  --success-soft: #e8f5ef;
+  --warning: #956711;
+  --warning-soft: #fff5da;
+  --danger: #b43c46;
+  --danger-soft: #fff0f1;
+  --info: #2f6fdb;
+  --info-soft: #e9f1ff;
+
+  --code-surface: #f0f3f8;
+  --scrollbar: #cbd4e0;
+  --shadow-sm: 0 1px 2px rgb(31 42 61 / 7%), 0 4px 12px rgb(31 42 61 / 4%);
+  --shadow-md: 0 14px 34px rgb(31 42 61 / 13%);
+  --shadow-lg: 0 26px 70px rgb(18 27 42 / 24%);
+  --muted: var(--text-secondary);
+}
+
+:root[data-theme="dark"] {
+  color: #edf2f8;
+  background: #111b2a;
+  color-scheme: dark;
+
+  --background: #111b2a;
+  --surface: #1b2939;
+  --surface-muted: #142033;
+  --surface-raised: #203044;
+  --surface-hover: #223550;
+  --surface-pressed: #29405e;
+  --control-surface: #1a2737;
+  --overlay: rgb(5 10 18 / 68%);
+
+  --border: #304158;
+  --border-strong: #42566f;
+  --divider: #29394e;
+
+  --text-primary: #f0f4f9;
+  --text-secondary: #aebbd0;
+  --text-tertiary: #7f8da2;
+  --text-on-accent: #0d1a2c;
+
+  --accent: #7db0ff;
+  --accent-hover: #9bc2ff;
+  --accent-soft: #223a5f;
+  --focus-ring: #91bcff;
+  --selection: #28466e;
+
+  --success: #6fe0ad;
+  --success-soft: #193e34;
+  --warning: #f0c866;
+  --warning-soft: #45381f;
+  --danger: #ff929c;
+  --danger-soft: #4b2930;
+  --info: #8ab7ff;
+  --info-soft: #223a5f;
+
+  --code-surface: #101a28;
+  --scrollbar: #42536a;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 20%), 0 5px 16px rgb(0 0 0 / 14%);
+  --shadow-md: 0 18px 42px rgb(0 0 0 / 30%);
+  --shadow-lg: 0 30px 90px rgb(0 0 0 / 48%);
+  --muted: var(--text-secondary);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 980px;
+  height: 100%;
+  min-height: 640px;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--background);
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+select,
+input[type="checkbox"],
+input[type="radio"] {
+  cursor: pointer;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--selection);
+  color: var(--text-primary);
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--scrollbar);
+  background-clip: padding-box;
+}
