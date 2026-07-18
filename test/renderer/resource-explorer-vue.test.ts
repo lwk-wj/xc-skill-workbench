@@ -97,6 +97,7 @@ describe('Vue resource explorer', () => {
 
   it('opens asset details in a drawer and preserves the selection when closed', async () => {
     const user = userEvent.setup()
+    vi.mocked(window.xcSkills.assets.scan).mockResolvedValueOnce([{ ...skill, group: '' }])
     renderTestApp(App)
     const rowLabel = await screen.findByText('Skill One')
 
@@ -104,7 +105,7 @@ describe('Vue resource explorer', () => {
     const drawer = await screen.findByRole('dialog', { name: 'Skill One' })
     expect(drawer).toBeInTheDocument()
     expect(within(drawer).getByText('SK')).toBeInTheDocument()
-    expect(within(drawer).getByText('开发 · Skill · v1.0.0')).toBeInTheDocument()
+    expect(within(drawer).getByText('Skill · v1.0.0')).toBeInTheDocument()
     expect(screen.queryByText('选择资源查看详情')).toBeNull()
 
     await user.click(within(drawer).getByRole('button', { name: /close/i }))

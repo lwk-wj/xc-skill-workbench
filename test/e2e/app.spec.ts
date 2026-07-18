@@ -33,6 +33,9 @@ test.describe('desktop smoke workflows', () => {
   })
 
   test('opens readable asset details in a wide drawer', async ({ e2e }) => {
+    await e2e.page.getByRole('button', { name: /添加项目/ }).click()
+    await e2e.page.getByRole('button', { name: '中央仓库' }).click()
+
     const columnCount = await e2e.page.getByTestId('app-shell').evaluate((element) => (
       getComputedStyle(element).gridTemplateColumns.split(' ').length
     ))
@@ -46,6 +49,16 @@ test.describe('desktop smoke workflows', () => {
 
     const width = await drawer.evaluate((element) => element.getBoundingClientRect().width)
     expect(width).toBeGreaterThanOrEqual(600)
+
+    const bodyOverflow = await drawer.locator('.el-drawer__body').evaluate((element) => getComputedStyle(element).overflowY)
+    const panelOverflow = await drawer.locator('.el-tabs__content').evaluate((element) => getComputedStyle(element).overflowY)
+    expect(bodyOverflow).toBe('hidden')
+    expect(panelOverflow).toBe('auto')
+
+    await drawer.getByRole('tab', { name: /安装状态/ }).click()
+    await expect(drawer.getByText('Global · 全局')).toBeVisible()
+    await expect(drawer.getByText('project · 项目')).toBeVisible()
+    await drawer.getByRole('tab', { name: '预览' }).click()
 
     await drawer.getByRole('button', { name: /close/i }).click()
     await expect(drawer).toBeHidden()

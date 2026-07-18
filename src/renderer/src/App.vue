@@ -19,6 +19,11 @@ const settingsOpen = ref(false)
 const detailOpen = ref(false)
 const assetKindMark = computed(() => ({ skills: 'SK', rules: 'RU', workflows: 'WF' })[explorer.selectedAsset?.type ?? 'skills'])
 const assetKindLabel = computed(() => ({ skills: 'Skill', rules: 'Rule', workflows: 'Workflow' })[explorer.selectedAsset?.type ?? 'skills'])
+const assetMetadata = computed(() => {
+  if (!explorer.selectedAsset) return ''
+  const version = explorer.selectedAsset.version ? `v${explorer.selectedAsset.version.replace(/^v/, '')}` : '无版本'
+  return [explorer.selectedAsset.group?.trim(), assetKindLabel.value, version].filter(Boolean).join(' · ')
+})
 
 watch(() => explorer.selectedAsset, (asset) => {
   if (!asset) detailOpen.value = false
@@ -64,7 +69,7 @@ onMounted(() => {
           <span class="asset-kind-mark" aria-hidden="true">{{ assetKindMark }}</span>
           <div class="asset-detail-header">
             <h2 :id="titleId" :class="titleClass">{{ explorer.selectedAsset?.name ?? '资源详情' }}</h2>
-            <small v-if="explorer.selectedAsset">{{ explorer.selectedAsset.group }} · {{ assetKindLabel }} · {{ explorer.selectedAsset.version ? `v${explorer.selectedAsset.version.replace(/^v/, '')}` : '无版本' }}</small>
+            <small v-if="explorer.selectedAsset">{{ assetMetadata }}</small>
           </div>
         </div>
       </template>
