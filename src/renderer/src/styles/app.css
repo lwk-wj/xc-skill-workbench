@@ -1139,17 +1139,18 @@ h3 {
 }
 
 .installation-view {
-  width: min(100%, 720px);
+  container-type: inline-size;
+  width: min(100%, 760px);
   margin: 0 auto;
-  padding: 22px 0 8px;
+  padding: 20px 0 8px;
 }
 
 .installation-view-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 .installation-view-header h3,
@@ -1171,16 +1172,20 @@ h3 {
 .installation-summary span,
 .status-badge {
   border-radius: 99px;
-  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
   color: var(--text-secondary);
-  padding: 4px 7px;
+  padding: 3px 7px;
   font-size: 9px;
   white-space: nowrap;
 }
 
 .installation-scope-filter {
   display: flex;
-  margin-bottom: 18px;
+  width: min(100%, 280px);
+  margin-bottom: 15px;
+  border-radius: 9px;
+  background: var(--surface-raised);
 }
 
 .installation-scope-filter .el-radio-button {
@@ -1192,7 +1197,7 @@ h3 {
 }
 
 .installation-group {
-  margin-top: 17px;
+  margin-top: 14px;
 }
 
 .installation-group h4 {
@@ -1203,23 +1208,47 @@ h3 {
 
 .status-location {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
+  grid-template-columns: 28px minmax(90px, .65fr) minmax(160px, 1.65fr) 48px auto auto;
+  grid-template-areas: "mark name path method badge actions";
   align-items: center;
-  gap: 11px;
-  margin-top: 8px;
+  gap: 10px;
+  min-height: 48px;
+  margin-top: -1px;
   border: 1px solid var(--border);
-  border-radius: 11px;
+  border-radius: 0;
   background: var(--surface-raised);
-  padding: 11px 12px;
-  box-shadow: var(--shadow-sm);
+  padding: 8px 10px;
+  box-shadow: none;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.installation-group .status-location:first-of-type {
+  margin-top: 7px;
+  border-radius: 10px 10px 0 0;
+}
+
+.installation-group .status-location:last-child {
+  border-radius: 0 0 10px 10px;
+}
+
+.installation-group .status-location:only-of-type {
+  border-radius: 10px;
+}
+
+.status-location:hover {
+  position: relative;
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  background: color-mix(in srgb, var(--surface-hover) 42%, var(--surface-raised));
+  z-index: 1;
 }
 
 .status-platform-mark {
+  grid-area: mark;
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   place-items: center;
-  border-radius: 9px;
+  border-radius: 7px;
   background: var(--surface-hover);
   color: var(--text-secondary);
   font-size: 9px;
@@ -1227,22 +1256,28 @@ h3 {
 }
 
 .status-location-copy {
-  display: grid;
-  min-width: 0;
-  gap: 4px;
+  display: contents;
 }
 
 .status-location-copy strong {
+  grid-area: name;
+  min-width: 0;
+  overflow: hidden;
   color: var(--text-primary);
   font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status-location-copy small {
+  grid-area: method;
   color: var(--text-tertiary);
   font-size: 10.5px;
+  text-align: center;
 }
 
 .status-location-copy code {
+  grid-area: path;
   display: block;
   max-width: 100%;
   overflow: hidden;
@@ -1254,10 +1289,10 @@ h3 {
 }
 
 .status-location-state {
-  display: grid;
-  justify-items: end;
-  gap: 7px;
+  display: contents;
 }
+
+.status-badge { grid-area: badge; }
 
 .status-badge[data-status="current"] { background: var(--success-soft); color: var(--success); }
 .status-badge[data-status="update_available"] { background: var(--info-soft); color: var(--info); }
@@ -1268,15 +1303,18 @@ h3 {
 .status-badge[data-status="invalid"] { background: var(--danger-soft); color: var(--danger); }
 
 .status-actions {
+  grid-area: actions;
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
 }
 
 .status-actions button {
-  min-height: 30px;
-  padding: 5px 8px;
-  font-size: 10.5px;
+  min-height: 26px;
+  padding: 3px 7px;
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .installation-empty {
@@ -1287,6 +1325,26 @@ h3 {
   gap: 10px;
   color: var(--text-tertiary);
   text-align: center;
+}
+
+@container (max-width: 620px) {
+  .status-location {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "mark name badge"
+      ". path actions"
+      ". method actions";
+    gap: 3px 9px;
+    padding: 9px 10px;
+  }
+
+  .status-location-copy small {
+    text-align: left;
+  }
+
+  .status-actions {
+    align-self: center;
+  }
 }
 
 /* Settings */
@@ -1824,15 +1882,6 @@ h3 {
 @media (max-width: 900px) {
   .asset-detail-drawer.el-drawer {
     width: calc(100vw - 24px) !important;
-  }
-
-  .status-location {
-    grid-template-columns: 34px minmax(0, 1fr);
-  }
-
-  .status-location-state {
-    grid-column: 2;
-    justify-items: start;
   }
 }
 

@@ -58,6 +58,22 @@ test.describe('desktop smoke workflows', () => {
     await drawer.getByRole('tab', { name: /安装状态/ }).click()
     await expect(drawer.getByText('Global · 全局')).toBeVisible()
     await expect(drawer.getByText('project · 项目')).toBeVisible()
+    await drawer.locator('.installation-scope-filter .el-radio-button').filter({ hasText: '全局' }).click()
+    const middleLocation = drawer.locator('.status-location').nth(1)
+    const compactLayout = await middleLocation.evaluate((element) => {
+      const style = getComputedStyle(element)
+      const name = element.querySelector('.status-location-copy strong')!.getBoundingClientRect()
+      const path = element.querySelector('.status-location-copy code')!.getBoundingClientRect()
+      return {
+        columns: style.gridTemplateColumns.split(' ').length,
+        radius: style.borderRadius,
+        nameTop: Math.round(name.top),
+        pathTop: Math.round(path.top),
+      }
+    })
+    expect(compactLayout.columns).toBeGreaterThanOrEqual(6)
+    expect(compactLayout.radius).toBe('0px')
+    expect(Math.abs(compactLayout.nameTop - compactLayout.pathTop)).toBeLessThanOrEqual(2)
     await drawer.getByRole('tab', { name: '预览' }).click()
 
     await drawer.getByRole('button', { name: /close/i }).click()
