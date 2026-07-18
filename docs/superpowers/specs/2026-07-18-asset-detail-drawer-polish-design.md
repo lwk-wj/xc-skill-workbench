@@ -111,7 +111,7 @@ Actions keep the current `install`, `update`, `update-with-warning`, `uninstall`
 
 ### `App.vue`
 
-Continues to own drawer visibility and the accessible drawer title. It supplies the selected asset, source, and project records to `AssetDetail`.
+Continues to own drawer visibility and the accessible drawer title. It supplies the selected asset, source, project records, and Agent definitions to `AssetDetail`.
 
 ### `AssetDetail.vue`
 
@@ -123,7 +123,8 @@ A new presentational component receives:
 
 - the selected asset;
 - loaded status records;
-- project records.
+- project records;
+- Agent definitions.
 
 It owns only the local scope filter and derived grouping. It emits the existing action kind and status location without modifying either value. It performs no IPC calls.
 
