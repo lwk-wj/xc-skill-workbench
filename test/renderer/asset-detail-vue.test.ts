@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/vue'
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/vue'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AssetDetail from '../../src/renderer/src/components/AssetDetail.vue'
@@ -22,6 +22,12 @@ const statuses = [
   { projectId: 'proj', agentId: 'claude-code', path: '/project/skills/Skill One', method: 'copy' as const, status: { status: 'locally_modified' as const, updateAvailable: true, locallyModified: true, sourceHash: 'a', installedHash: 'b', sourceVersion: '1.0.0', installedVersion: '1.0.0', resolvedTarget: null, reason: '' } },
 ]
 
+const projects = [{ id: 'proj', name: 'Demo Project', path: '/tmp/demo' }]
+const agents = [
+  { id: 'codex', name: 'Codex', projectBaseDir: '/tmp/.codex', globalBaseDir: '/tmp/.codex', assetDirs: { skills: '/skills', rules: '/rules', workflows: '/workflows' }, builtIn: true, enabled: true },
+  { id: 'claude-code', name: 'Claude Code', projectBaseDir: '/tmp/.claude', globalBaseDir: '/tmp/.claude', assetDirs: { skills: '/skills', rules: '/rules', workflows: '/workflows' }, builtIn: true, enabled: true },
+]
+
 describe('Vue asset detail', () => {
   afterEach(cleanup)
   beforeEach(() => {
@@ -32,13 +38,12 @@ describe('Vue asset detail', () => {
     const user = userEvent.setup()
     const loadDetail = vi.fn().mockResolvedValue(detail)
     const loadStatuses = vi.fn().mockResolvedValue(statuses)
-    renderTestApp(AssetDetail, { props: { asset, source: { kind: 'project', projectId: 'proj' }, loadDetail, loadStatuses } })
+    renderTestApp(AssetDetail, { props: { asset, source: { kind: 'project', projectId: 'proj' }, loadDetail, loadStatuses, projects, agents } })
 
     await waitFor(() => expect(screen.getByTestId('markdown-preview')).toHaveTextContent('Skill One'))
     expect(loadDetail).toHaveBeenCalledWith({ source: { kind: 'project', projectId: 'proj' }, assetId: 'codex:skill-one' })
     expect(loadStatuses).toHaveBeenCalledWith({ source: { kind: 'project', projectId: 'proj' }, assetId: 'codex:skill-one' })
-    expect(screen.getByText('Global')).toBeInTheDocument()
-    expect(screen.getByText('/global/skills/Skill One')).toBeInTheDocument()
+    expect(screen.getByText('Global · 全局')).not.toBeVisible()
 
     const docs = screen.getByRole('link', { name: 'Docs' })
     await user.click(docs)
@@ -48,24 +53,31 @@ describe('Vue asset detail', () => {
     await user.click(screen.getByRole('tab', { name: '源码' }))
     expect(screen.getByRole('tabpanel')).toHaveTextContent('# Skill One')
     await user.click(screen.getByRole('tab', { name: '文件' }))
-    expect(screen.getByText('SKILL.md')).toBeInTheDocument()
-    expect(screen.getByText('image.bin')).toBeInTheDocument()
+    const filesPanel = screen.getByRole('tabpanel', { name: '文件' })
+    expect(within(filesPanel).getByText('SKILL.md')).toBeInTheDocument()
+    expect(within(filesPanel).getByText('image.bin')).toBeInTheDocument()
     await user.click(screen.getByRole('tab', { name: '演进历史' }))
     expect(screen.getByTestId('evolution-content')).toHaveTextContent('Evolution')
+    await user.click(screen.getByRole('tab', { name: /安装状态/ }))
+    expect(screen.getByText('Global · 全局')).toBeInTheDocument()
+    expect(screen.getByText('Demo Project · 项目')).toBeInTheDocument()
   })
 
   it('emits exact installed-location actions and omits Skill-only controls for Rules', async () => {
     const user = userEvent.setup()
     const onAction = vi.fn()
     const view = renderTestApp(AssetDetail, { props: { asset, source: { kind: 'central' }, loadDetail: vi.fn().mockResolvedValue(detail), loadStatuses: vi.fn().mockResolvedValue(statuses) }, attrs: { onAction } })
+    await user.click(await screen.findByRole('tab', { name: /安装状态/ }))
     await waitFor(() => expect(screen.getByRole('button', { name: '冻结 Skill One' })).toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: '查看影响并更新 Skill One' }))
     expect(onAction).toHaveBeenCalledWith('update-with-warning', statuses[1])
 
     const rule = { ...asset, id: 'codex:rule-one', type: 'rules' as const, name: 'Rule One', entryPath: '/tmp/rule-one/RULE.md' }
     await view.rerender({ asset: rule, source: { kind: 'central' }, loadDetail: vi.fn().mockResolvedValue({ ...detail, ...rule, evolution: '# hidden' }), loadStatuses: vi.fn().mockResolvedValue([{ ...statuses[0] }]) })
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Rule One' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('tab', { name: /安装状态/ })).toBeInTheDocument())
+    expect(screen.getByRole('heading', { name: 'Rule One' })).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: '演进历史' })).toBeNull()
+    await user.click(screen.getByRole('tab', { name: /安装状态/ }))
     expect(screen.queryByRole('button', { name: '冻结 Rule One' })).toBeNull()
   })
 

@@ -103,6 +103,8 @@ describe('Vue resource explorer', () => {
     await user.click(rowLabel)
     const drawer = await screen.findByRole('dialog', { name: 'Skill One' })
     expect(drawer).toBeInTheDocument()
+    expect(within(drawer).getByText('SK')).toBeInTheDocument()
+    expect(within(drawer).getByText('开发 · Skill · v1.0.0')).toBeInTheDocument()
     expect(screen.queryByText('选择资源查看详情')).toBeNull()
 
     await user.click(within(drawer).getByRole('button', { name: /close/i }))
