@@ -209,6 +209,19 @@ export class CoreService {
     if (!asset) throw new Error(`asset not found: ${selection.assetId}`)
     return asset
   }
+
+  private findCentralAsset(installed: AssetRecord, centralAssets: AssetRecord[]): { asset: AssetRecord | null; reason: string } {
+    const exact = centralAssets.find((candidate) => candidate.type === installed.type && candidate.group === installed.group && candidate.name === installed.name)
+    if (exact) return { asset: exact, reason: '' }
+    if (installed.group) return { asset: null, reason: '中央分支不存在同名资产' }
+    const candidates = centralAssets.filter((candidate) => candidate.type === installed.type && candidate.name === installed.name)
+    if (candidates.length === 1) return { asset: candidates[0]!, reason: '' }
+    return {
+      asset: null,
+      reason: candidates.length > 1 ? '中央仓库存在多个同名资产，无法确定来源分组' : '中央分支不存在同名资产',
+    }
+  }
+
   async detail(selection: AssetSelection): Promise<AssetDetail> {
     const asset = await this.getCatalogAsset(selection)
     const coreAsset = this.coreCatalog.get(keyFor(selection.source, selection.assetId)) ?? asset as unknown as CoreAsset
@@ -218,11 +231,16 @@ export class CoreService {
     const installed = await this.getCatalogAsset(selection)
     const meta = this.metadata.get(keyFor(selection.source, selection.assetId))
     const scannedLocations = (this.locations.get(keyFor(selection.source, selection.assetId)) ?? []).filter(({ meta: locationMeta }) => selection.source.kind !== 'project' || locationMeta.projectId === selection.source.projectId)
-    let central: AssetRecord | undefined
-    try { central = (await this.scan({ kind: 'central' })).find((candidate) => candidate.type === installed.type && candidate.group === installed.group && candidate.name === installed.name) } catch { /* report unknown below */ }
+    let central: AssetRecord | null = null
+    let missingReason = '中央分支不存在同名资产'
+    try {
+      const match = this.findCentralAsset(installed, await this.scan({ kind: 'central' }))
+      central = match.asset
+      missingReason = match.reason
+    } catch { /* report unknown below */ }
     if (!central) {
       const locations = scannedLocations.length > 0 ? scannedLocations.map(({ asset: location, meta: locationMeta }) => ({ projectId: locationMeta.projectId, agentId: locationMeta.agentId ?? '', path: location.path })) : [{ projectId: meta?.projectId ?? null, agentId: meta?.agentId ?? '', path: installed.path }]
-      return Promise.all(locations.map(async (location) => ({ ...location, method: await this.installMethod(location.path), status: unknownStatus('中央分支不存在同名资产') })))
+      return Promise.all(locations.map(async (location) => ({ ...location, method: await this.installMethod(location.path), status: unknownStatus(missingReason) })))
     }
 
     const centralCoreAsset = this.coreCatalog.get(keyFor({ kind: 'central' }, central.id)) ?? central as unknown as CoreAsset
@@ -248,14 +266,14 @@ export class CoreService {
         try { globalRoot = this.core.resolveAgentAssetRoot(agent as unknown as CoreAgent, 'global', homedir(), type) } catch {
           const base = resolve(agent.globalBaseDir); globalRoot = resolve(base, agent.assetDirs[type])
         }
-        locations.push({ projectId: null, agentId: agent.id, path: join(globalRoot, central.group, central.name) })
+        locations.push({ projectId: null, agentId: agent.id, path: join(globalRoot, central.name) })
         for (const project of state.projects) {
           let projectRoot: string
           try { projectRoot = this.core.resolveAgentAssetRoot(agent as unknown as CoreAgent, 'project', project.path, type) } catch {
             const base = agent.projectBaseDir.startsWith('/') ? agent.projectBaseDir : resolve(project.path, agent.projectBaseDir)
             projectRoot = resolve(base, agent.assetDirs[type])
           }
-          locations.push({ projectId: project.id, agentId: agent.id, path: join(projectRoot, central.group, central.name) })
+          locations.push({ projectId: project.id, agentId: agent.id, path: join(projectRoot, central.name) })
         }
       }
     }
@@ -272,11 +290,10 @@ export class CoreService {
     let sourceSelection = request.asset
     if (request.kind === 'update' && request.asset.source.kind !== 'central') {
       const centralAssets = await this.scan({ kind: 'central' })
-      const centralAsset = centralAssets.find((candidate) => candidate.type === sourceAsset.type && candidate.group === sourceAsset.group && candidate.name === sourceAsset.name)
-      if (centralAsset) {
-        sourceAsset = centralAsset
-        sourceSelection = { source: { kind: 'central' }, assetId: centralAsset.id }
-      }
+      const match = this.findCentralAsset(sourceAsset, centralAssets)
+      if (!match.asset) throw new Error(match.reason)
+      sourceAsset = match.asset
+      sourceSelection = { source: { kind: 'central' }, assetId: match.asset.id }
     }
     const state = await this.appStore.read()
     const agent = (await this.listAgents()).find((item) => item.id === request.target.agentId)

@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, readFile, writeFile, rm, realpath, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { AppStore } from '../../src/main/services/app-store.js'
 import { CoreService } from '../../src/main/services/core-service.js'
 
@@ -119,6 +119,115 @@ describe('CoreService', () => {
     await rm(join(installedPath, 'SKILL.md'))
     await symlink(join(centralPath, 'SKILL.md'), join(installedPath, 'SKILL.md'))
     expect((await service.statuses(selection))[0]?.method).toBe('symlink')
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it('matches a flat project installation to its uniquely named grouped central asset', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-flat-status-'))
+    const centralRoot = join(root, 'central')
+    const projectRoot = join(root, 'project')
+    await mkdir(projectRoot, { recursive: true })
+    const canonicalProjectRoot = await realpath(projectRoot)
+    const projectSkills = join(canonicalProjectRoot, '.codex', 'skills')
+    const installedPath = join(projectSkills, 'call-api')
+    await mkdir(installedPath, { recursive: true })
+    const store = new AppStore(join(root, 'state.json'))
+    await store.addProject({ id: 'project-1', name: 'Project', path: projectRoot })
+    const centralAsset = {
+      id: 'central-call-api', type: 'skills' as const, name: 'call-api', group: 'backend',
+      path: join(centralRoot, 'backend', 'skills', 'call-api'), entryPath: join(centralRoot, 'backend', 'skills', 'call-api', 'SKILL.md'),
+      entryState: 'active' as const, description: 'API helper', version: '1.0.0',
+    }
+    const installedAsset = {
+      ...centralAsset, id: 'installed-call-api', group: '', path: installedPath, entryPath: join(installedPath, 'SKILL.md'),
+    }
+    const status = { status: 'current' as const, updateAvailable: false, locallyModified: false, sourceHash: 'same', installedHash: 'same', sourceVersion: '1.0.0', installedVersion: '1.0.0', resolvedTarget: installedPath, reason: '内容一致' }
+    const evaluateAssetStatus = vi.fn(async () => status)
+    const agent = { id: 'codex', name: 'Codex', projectBaseDir: '.codex', globalBaseDir: join(root, 'global', '.codex'), assetDirs: { skills: 'skills', rules: 'rules', workflows: 'workflows' }, builtIn: true, enabled: true }
+    const service = new CoreService({
+      appStore: store,
+      core: {
+        BUILTIN_AGENTS: [agent],
+        readConfig: async () => ({ mode: 'local', defaultBranch: 'main' }),
+        resolveRepositorySource: async () => ({ root: centralRoot, branch: 'main', kind: 'local-worktree', allowSymlink: true, stale: false, cachedAt: null }),
+        resolveAgentAssetRoot: (_agent, scope, base, type) => scope === 'project' ? join(base, '.codex', type) : join(root, 'global', '.codex', type),
+        scanAssets: async ({ root: scanRoot }) => scanRoot === centralRoot ? [centralAsset] : scanRoot === projectSkills ? [installedAsset] : [],
+        evaluateAssetStatus,
+      },
+    })
+
+    const [asset] = await service.scan({ kind: 'project', projectId: 'project-1' })
+    const [location] = await service.statuses({ source: { kind: 'project', projectId: 'project-1' }, assetId: asset!.id })
+
+    expect(location?.status.status).toBe('current')
+    expect(evaluateAssetStatus).toHaveBeenCalledWith(centralAsset, installedPath)
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it('checks central asset status at flat Agent installation paths', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-flat-paths-'))
+    const centralRoot = join(root, 'central')
+    const projectRoot = join(root, 'project')
+    const globalSkills = join(root, 'global', '.codex', 'skills')
+    await mkdir(projectRoot, { recursive: true })
+    const canonicalProjectRoot = await realpath(projectRoot)
+    const store = new AppStore(join(root, 'state.json'))
+    await store.addProject({ id: 'project-1', name: 'Project', path: projectRoot })
+    const centralAsset = {
+      id: 'central-call-api', type: 'skills' as const, name: 'call-api', group: 'backend',
+      path: join(centralRoot, 'backend', 'skills', 'call-api'), entryPath: join(centralRoot, 'backend', 'skills', 'call-api', 'SKILL.md'),
+      entryState: 'active' as const, description: 'API helper', version: '1.0.0',
+    }
+    const status = { status: 'not_installed' as const, updateAvailable: false, locallyModified: false, sourceHash: 'source', installedHash: null, sourceVersion: '1.0.0', installedVersion: null, resolvedTarget: null, reason: '未安装' }
+    const evaluateAssetStatus = vi.fn(async () => status)
+    const agent = { id: 'codex', name: 'Codex', projectBaseDir: '.codex', globalBaseDir: join(root, 'global', '.codex'), assetDirs: { skills: 'skills', rules: 'rules', workflows: 'workflows' }, builtIn: true, enabled: true }
+    const service = new CoreService({
+      appStore: store,
+      core: {
+        BUILTIN_AGENTS: [agent],
+        readConfig: async () => ({ mode: 'local', defaultBranch: 'main' }),
+        resolveRepositorySource: async () => ({ root: centralRoot, branch: 'main', kind: 'local-worktree', allowSymlink: true, stale: false, cachedAt: null }),
+        resolveAgentAssetRoot: (_agent, scope, base, type) => scope === 'project' ? join(base, '.codex', type) : join(root, 'global', '.codex', type),
+        scanAssets: async ({ root: scanRoot }) => scanRoot === centralRoot ? [centralAsset] : [],
+        evaluateAssetStatus,
+      },
+    })
+
+    const [asset] = await service.scan({ kind: 'central' })
+    const locations = await service.statuses({ source: { kind: 'central' }, assetId: asset!.id })
+
+    expect(locations.map((location) => location.path)).toEqual([
+      join(globalSkills, 'call-api'),
+      join(canonicalProjectRoot, '.codex', 'skills', 'call-api'),
+    ])
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it('does not guess a central group for ambiguous flat installations', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-flat-ambiguous-'))
+    const centralRoot = join(root, 'central')
+    const globalSkills = join(root, 'global', '.codex', 'skills')
+    const installedPath = join(globalSkills, 'call-api')
+    await mkdir(installedPath, { recursive: true })
+    const asset = (id: string, group: string, path: string) => ({ id, type: 'skills' as const, name: 'call-api', group, path, entryPath: join(path, 'SKILL.md'), entryState: 'active' as const, description: 'API helper', version: '1.0.0' })
+    const centralAssets = [asset('backend-call-api', 'backend', join(centralRoot, 'backend', 'skills', 'call-api')), asset('common-call-api', 'common', join(centralRoot, 'common', 'skills', 'call-api'))]
+    const installedAsset = asset('installed-call-api', '', installedPath)
+    const agent = { id: 'codex', name: 'Codex', projectBaseDir: '.codex', globalBaseDir: join(root, 'global', '.codex'), assetDirs: { skills: 'skills', rules: 'rules', workflows: 'workflows' }, builtIn: true, enabled: true }
+    const service = new CoreService({
+      appStore: new AppStore(join(root, 'state.json')),
+      core: {
+        BUILTIN_AGENTS: [agent],
+        readConfig: async () => ({ mode: 'local', defaultBranch: 'main' }),
+        resolveRepositorySource: async () => ({ root: centralRoot, branch: 'main', kind: 'local-worktree', allowSymlink: true, stale: false, cachedAt: null }),
+        resolveAgentAssetRoot: (_agent, _scope, _base, type) => join(root, 'global', '.codex', type),
+        scanAssets: async ({ root: scanRoot }) => scanRoot === centralRoot ? centralAssets : scanRoot === globalSkills ? [installedAsset] : [],
+      },
+    })
+
+    const [scanned] = await service.scan({ kind: 'global' })
+    const [location] = await service.statuses({ source: { kind: 'global' }, assetId: scanned!.id })
+
+    expect(location?.status).toMatchObject({ status: 'unknown', reason: '中央仓库存在多个同名资产，无法确定来源分组' })
     await rm(root, { recursive: true, force: true })
   })
 })
