@@ -227,7 +227,7 @@ async updateConfig(input: RepositoryConfigInput): Promise<RepositoryConfigUpdate
     await this.log?.write('error', 'repository configuration update failed', {
       mode: input.mode,
       branch: input.defaultBranch,
-      message: error instanceof Error ? error.message : String(error),
+      code: typeof error === 'object' && error && 'code' in error ? String(error.code) : 'UNKNOWN',
     })
     throw error
   }
