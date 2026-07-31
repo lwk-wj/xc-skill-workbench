@@ -4,6 +4,7 @@ import { cleanup, screen, waitFor } from '@testing-library/vue'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CustomAgentForm from '../../src/renderer/src/features/settings/CustomAgentForm.vue'
+import RepositoryConfigForm from '../../src/renderer/src/features/settings/RepositoryConfigForm.vue'
 import SettingsDialog from '../../src/renderer/src/features/settings/SettingsDialog.vue'
 import ErrorNotice from '../../src/renderer/src/components/ErrorNotice.vue'
 import { renderTestApp } from '../../src/renderer/src/app/render-test-app'
@@ -64,7 +65,7 @@ describe('Vue settings', () => {
     renderTestApp(SettingsDialog, { props: { modelValue: true } })
 
     await waitFor(() => expect(screen.getByRole('dialog', { name: '设置' })).toBeInTheDocument())
-    await waitFor(() => expect(screen.getByText('https://example.com/repo.git')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByLabelText('远程仓库 URL')).toHaveValue('https://example.com/repo.git'))
     await user.click(screen.getByRole('combobox', { name: '主题' }))
     await user.click(screen.getByText('浅色'))
     await waitFor(() => expect(window.xcSkills.preferences.setTheme).toHaveBeenCalledWith('light'))
@@ -84,5 +85,137 @@ describe('Vue settings', () => {
     await waitFor(() => expect(saveCustom).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'demo', enabled: false })))
     await user.click(screen.getByRole('button', { name: '移除 Demo' }))
     expect(removeCustom).toHaveBeenCalledWith('demo')
+  })
+
+  it('switches repository sources, chooses a local directory, and saves normalized values', async () => {
+    const user = userEvent.setup()
+    const onSaved = vi.fn()
+    const updateConfig = vi.fn(async (input) => ({
+      config: input,
+      repository: {
+        branch: input.defaultBranch,
+        kind: 'local-worktree' as const,
+        allowSymlink: true,
+        stale: false,
+        cachedAt: null,
+      },
+    }))
+    window.xcSkills = {
+      repositories: {
+        chooseLocalPath: vi.fn().mockResolvedValue('/tmp/chosen'),
+        updateConfig,
+      },
+    } as never
+    renderTestApp(RepositoryConfigForm, {
+      props: {
+        config: {
+          mode: 'remote',
+          repoPath: '/tmp/local',
+          remoteUrl: 'https://example.com/old.git',
+          defaultBranch: 'main',
+          defaultGroups: [' backend ', 'backend'],
+        },
+        onSaved,
+      },
+    })
+
+    expect(screen.getByLabelText('远程仓库 URL')).toHaveValue('https://example.com/old.git')
+    expect(screen.queryByLabelText('本地仓库路径')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '保存并刷新' })).toBeDisabled()
+
+    await user.click(screen.getByRole('radio', { name: '本地' }))
+    expect(screen.getByLabelText('本地仓库路径')).toHaveValue('/tmp/local')
+    expect(screen.queryByLabelText('远程仓库 URL')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '选择文件夹' }))
+    expect(screen.getByLabelText('本地仓库路径')).toHaveValue('/tmp/chosen')
+    await user.click(screen.getByRole('button', { name: '保存并刷新' }))
+
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith({
+      mode: 'local',
+      repoPath: '/tmp/chosen',
+      remoteUrl: 'https://example.com/old.git',
+      defaultBranch: 'main',
+      defaultGroups: ['backend'],
+    }))
+    expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'local',
+      repoPath: '/tmp/chosen',
+    }))
+    expect(screen.getByRole('button', { name: '保存并刷新' })).toBeDisabled()
+  })
+
+  it('disables repository saving while pending', async () => {
+    const user = userEvent.setup()
+    let resolveUpdate!: (value: unknown) => void
+    const pending = new Promise((resolve) => { resolveUpdate = resolve })
+    window.xcSkills = {
+      repositories: {
+        chooseLocalPath: vi.fn(),
+        updateConfig: vi.fn(() => pending),
+      },
+    } as never
+    renderTestApp(RepositoryConfigForm, {
+      props: {
+        config: {
+          mode: 'remote',
+          repoPath: '/tmp/local',
+          remoteUrl: 'https://example.com/old.git',
+          defaultBranch: 'main',
+          defaultGroups: [],
+        },
+      },
+    })
+
+    await user.clear(screen.getByLabelText('默认分支'))
+    await user.type(screen.getByLabelText('默认分支'), 'release')
+    await user.click(screen.getByRole('button', { name: '保存并刷新' }))
+
+    expect(screen.getByRole('button', { name: '保存并刷新' })).toBeDisabled()
+    resolveUpdate({
+      config: {
+        mode: 'remote',
+        repoPath: '/tmp/local',
+        remoteUrl: 'https://example.com/old.git',
+        defaultBranch: 'release',
+        defaultGroups: [],
+      },
+      repository: {
+        branch: 'release',
+        kind: 'branch-cache',
+        allowSymlink: false,
+        stale: false,
+        cachedAt: null,
+      },
+    })
+    await waitFor(() => expect(screen.getByText('配置已保存，中央仓库已刷新')).toBeInTheDocument())
+  })
+
+  it('keeps edited repository values after a save failure', async () => {
+    const user = userEvent.setup()
+    window.xcSkills = {
+      repositories: {
+        chooseLocalPath: vi.fn(),
+        updateConfig: vi.fn().mockRejectedValue(new Error('repository unavailable')),
+      },
+    } as never
+    renderTestApp(RepositoryConfigForm, {
+      props: {
+        config: {
+          mode: 'remote',
+          repoPath: '/tmp/local',
+          remoteUrl: 'https://example.com/old.git',
+          defaultBranch: 'main',
+          defaultGroups: [],
+        },
+      },
+    })
+
+    await user.clear(screen.getByLabelText('远程仓库 URL'))
+    await user.type(screen.getByLabelText('远程仓库 URL'), 'https://example.com/new.git')
+    await user.click(screen.getByRole('button', { name: '保存并刷新' }))
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('操作失败'))
+    expect(screen.getByLabelText('远程仓库 URL')).toHaveValue('https://example.com/new.git')
+    expect(screen.getByRole('button', { name: '保存并刷新' })).toBeEnabled()
   })
 })

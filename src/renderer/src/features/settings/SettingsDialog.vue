@@ -5,9 +5,10 @@ import type { AgentDefinition, ThemePreference, XcSkillsConfig } from '../../../
 import ErrorNotice from '../../components/ErrorNotice.vue'
 import { usePreferencesStore } from '../../stores/preferences'
 import CustomAgentForm from './CustomAgentForm.vue'
+import RepositoryConfigForm from './RepositoryConfigForm.vue'
 
 const visible = defineModel<boolean>({ required: true })
-const emit = defineEmits<{ agentsChanged: [] }>()
+const emit = defineEmits<{ agentsChanged: []; repositoryChanged: [] }>()
 const preferences = usePreferencesStore()
 const config = ref<XcSkillsConfig>({})
 const agents = ref<AgentDefinition[]>([])
@@ -61,6 +62,11 @@ const removeAgent = async (agent: AgentDefinition): Promise<void> => {
     emit('agentsChanged')
   } catch (cause) { error.value = cause }
 }
+
+const handleRepositorySaved = (next: XcSkillsConfig): void => {
+  config.value = next
+  emit('repositoryChanged')
+}
 </script>
 
 <template>
@@ -79,13 +85,7 @@ const removeAgent = async (agent: AgentDefinition): Promise<void> => {
       </section>
       <section class="settings-section">
         <h3>CLI 仓库</h3>
-        <dl class="config-list">
-          <div><dt>模式</dt><dd>{{ config.mode === 'remote' ? '远程' : '本地' }}</dd></div>
-          <div><dt>仓库路径</dt><dd>{{ config.repoPath ?? '未配置' }}</dd></div>
-          <div><dt>仓库 URL</dt><dd>{{ config.remoteUrl ?? '未配置' }}</dd></div>
-          <div><dt>默认分支</dt><dd>{{ config.defaultBranch ?? '未配置' }}</dd></div>
-          <div><dt>默认分组</dt><dd>{{ config.defaultGroups?.join('、') || '全部分组' }}</dd></div>
-        </dl>
+        <RepositoryConfigForm :config="config" @saved="handleRepositorySaved" />
       </section>
       <section class="settings-section">
         <div class="section-heading"><h3>Agents</h3><ElButton @click="showAgentForm = true">添加自定义 Agent</ElButton></div>
