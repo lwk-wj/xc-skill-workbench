@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   Channels,
   CustomAgentDirectorySchema,
@@ -96,5 +96,90 @@ describe('IPC contracts', () => {
   it('uses dedicated channels for repository configuration actions', () => {
     expect(Channels.repositoriesChooseLocalPath).toBe('repositories:chooseLocalPath')
     expect(Channels.repositoriesUpdateConfig).toBe('repositories:updateConfig')
+  })
+
+  it('chooses a local repository directory and returns null when selection is cancelled', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-repository-picker-'))
+    const handlers = new Map<string, (event: unknown, input?: unknown) => unknown>()
+    const showOpenDialog = vi.fn()
+      .mockResolvedValueOnce({ canceled: false, filePaths: ['/tmp/catalog'] })
+      .mockResolvedValueOnce({ canceled: true, filePaths: [] })
+    registerIpc({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+      appStore: new AppStore(join(root, 'state.json')),
+      dialog: { showOpenDialog },
+    })
+
+    expect(await handlers.get(Channels.repositoriesChooseLocalPath)?.({}, undefined)).toBe('/tmp/catalog')
+    expect(await handlers.get(Channels.repositoriesChooseLocalPath)?.({}, undefined)).toBeNull()
+    expect(showOpenDialog).toHaveBeenCalledWith({
+      properties: ['openDirectory', 'createDirectory'],
+    })
+  })
+
+  it('normalizes repository updates before invoking the service', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-repository-update-'))
+    const handlers = new Map<string, (event: unknown, input?: unknown) => unknown>()
+    const updateConfig = vi.fn(async () => ({
+      config: {
+        mode: 'remote' as const,
+        repoPath: '/tmp/catalog',
+        remoteUrl: 'https://example.com/catalog.git',
+        defaultBranch: 'main',
+        defaultGroups: ['backend'],
+      },
+      repository: {
+        branch: 'main',
+        kind: 'branch-cache' as const,
+        allowSymlink: false,
+        stale: false,
+        cachedAt: null,
+      },
+    }))
+    registerIpc({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+      appStore: new AppStore(join(root, 'state.json')),
+      services: { updateConfig },
+    })
+
+    const result = await handlers.get(Channels.repositoriesUpdateConfig)?.({}, {
+      mode: 'remote',
+      repoPath: '/tmp/catalog',
+      remoteUrl: ' https://example.com/catalog.git ',
+      defaultBranch: ' main ',
+      defaultGroups: [' backend ', 'backend', ''],
+    })
+
+    expect(updateConfig).toHaveBeenCalledWith({
+      mode: 'remote',
+      repoPath: '/tmp/catalog',
+      remoteUrl: 'https://example.com/catalog.git',
+      defaultBranch: 'main',
+      defaultGroups: ['backend'],
+    })
+    expect(result).toMatchObject({
+      config: { mode: 'remote', defaultBranch: 'main' },
+      repository: { branch: 'main', kind: 'branch-cache' },
+    })
+  })
+
+  it('rejects invalid repository updates before invoking the service', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-repository-update-invalid-'))
+    const handlers = new Map<string, (event: unknown, input?: unknown) => unknown>()
+    const updateConfig = vi.fn()
+    registerIpc({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+      appStore: new AppStore(join(root, 'state.json')),
+      services: { updateConfig },
+    })
+
+    await expect(handlers.get(Channels.repositoriesUpdateConfig)?.({}, {
+      mode: 'remote',
+      repoPath: '/tmp/catalog',
+      remoteUrl: '',
+      defaultBranch: 'main',
+      defaultGroups: [],
+    })).rejects.toThrow(/remote repository URL required/)
+    expect(updateConfig).not.toHaveBeenCalled()
   })
 })

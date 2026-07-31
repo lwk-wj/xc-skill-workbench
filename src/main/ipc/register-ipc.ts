@@ -3,9 +3,10 @@ import { randomUUID } from 'node:crypto'
 import {
   AgentDefinitionSchema, AssetDetailSchema, AssetSelectionSchema, AssetRecordSchema, Channels, ExternalUrlSchema,
   OperationRequestSchema, OperationResultSchema, OperationPlanSchema, OperationProgressSchema, RepositoryBranchSchema, RepositoryViewSchema,
-  SourceSelectionSchema, ThemePreferenceSchema, XcSkillsConfigSchema, type AgentDefinition, type AssetDetail, type AssetRecord,
+  RepositoryConfigInputSchema, RepositoryConfigUpdateResultSchema, SourceSelectionSchema, ThemePreferenceSchema,
+  XcSkillsConfigSchema, type AgentDefinition, type AssetDetail, type AssetRecord,
   type DesktopApi, type OperationPlan, type OperationProgress, type OperationRequest, type OperationResult, type RepositoryBranch,
-  type RepositoryView, type SourceSelection, type XcSkillsConfig,
+  type RepositoryConfigInput, type RepositoryConfigUpdateResult, type RepositoryView, type SourceSelection, type XcSkillsConfig,
 } from '../../shared/ipc.js'
 import type { AppStore } from '../services/app-store.js'
 import type { CoreService } from '../services/core-service.js'
@@ -24,6 +25,7 @@ export interface IpcServices {
   saveCustomAgent?: (agent: AgentDefinition) => Promise<AgentDefinition[]>
   removeCustomAgent?: (id: string) => Promise<AgentDefinition[]>
   getConfig?: () => Promise<XcSkillsConfig>
+  updateConfig?: (input: RepositoryConfigInput) => Promise<RepositoryConfigUpdateResult>
   listBranches?: () => Promise<RepositoryBranch[]>
   selectBranch?: (branch: string) => Promise<RepositoryView>
   setDefaultBranch?: (branch: string) => Promise<XcSkillsConfig>
@@ -59,7 +61,7 @@ export const registerIpc = ({ ipcMain, appStore, services: suppliedServices = {}
   const coreBindings: IpcServices = coreService ? {
     listProjects: () => coreService.listProjects(), chooseAndAddProject: () => coreService.chooseAndAddProject(), removeProject: (id) => coreService.removeProject(id),
     listAgents: () => coreService.listAgents(), saveCustomAgent: (agent) => coreService.saveCustomAgent(agent), removeCustomAgent: (id) => coreService.removeCustomAgent(id),
-    getConfig: () => coreService.getConfig(), listBranches: () => coreService.listBranches(), selectBranch: (branch) => coreService.selectBranch(branch), setDefaultBranch: (branch) => coreService.setDefaultBranch(branch), refresh: () => coreService.refresh(),
+    getConfig: () => coreService.getConfig(), updateConfig: (input) => coreService.updateConfig(input), listBranches: () => coreService.listBranches(), selectBranch: (branch) => coreService.selectBranch(branch), setDefaultBranch: (branch) => coreService.setDefaultBranch(branch), refresh: () => coreService.refresh(),
     scan: (source) => coreService.scan(source), detail: (selection) => coreService.detail(selection), statuses: (selection) => coreService.statuses(selection),
     plan: (request) => coreService.plan(request), execute: (planId, options) => coreService.execute(planId, options), cancel: (planId, options) => coreService.cancel(planId, options), rescan: (paths) => coreService.rescanAffected(paths),
   } : {}
@@ -85,7 +87,7 @@ export const registerIpc = ({ ipcMain, appStore, services: suppliedServices = {}
     }
   }
   const invoke = <T>(channel: string, parser: { parse(value: unknown): T }, handler: (value: T, event?: unknown) => unknown): void => {
-    ipcMain.handle(channel, (event, input) => handler(parser.parse(input), event))
+    ipcMain.handle(channel, async (event, input) => handler(parser.parse(input), event))
   }
   const noInput = z.union([z.undefined(), z.null()])
 
@@ -105,6 +107,17 @@ export const registerIpc = ({ ipcMain, appStore, services: suppliedServices = {}
   invoke(Channels.agentsRemoveCustom, z.string().regex(/^[A-Za-z0-9._:-]+$/).min(1).max(200), async (id) => services.removeCustomAgent ? services.removeCustomAgent(id) : appStore.removeCustomAgent(id))
 
   invoke(Channels.repositoriesGetConfig, noInput, async () => services.getConfig ? services.getConfig() : {})
+  invoke(Channels.repositoriesChooseLocalPath, noInput, async () => {
+    if (!dialog) return null
+    const picked = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
+    return picked.canceled || !picked.filePaths[0] ? null : picked.filePaths[0]
+  })
+  invoke(Channels.repositoriesUpdateConfig, RepositoryConfigInputSchema, async (input) => {
+    const result = services.updateConfig
+      ? await services.updateConfig(input)
+      : unsupported('repositories.updateConfig')
+    return RepositoryConfigUpdateResultSchema.parse(result)
+  })
   invoke(Channels.repositoriesListBranches, noInput, async () => services.listBranches ? services.listBranches() : [])
   const branchSchema = z.string().trim().min(1).max(255)
   invoke(Channels.repositoriesSelectBranch, branchSchema, (branch) => services.selectBranch ? services.selectBranch(branch) : unsupported('repositories.selectBranch'))
