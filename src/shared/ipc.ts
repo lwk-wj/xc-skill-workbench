@@ -82,6 +82,29 @@ export const XcSkillsConfigSchema = z.object({
   defaultGroups: z.array(z.string()).optional(),
 }).passthrough()
 export type XcSkillsConfig = z.infer<typeof XcSkillsConfigSchema>
+const NormalizedRepositoryGroupsSchema = z.array(z.string()).transform((groups) =>
+  [...new Set(groups.map((group) => group.trim()).filter(Boolean))]
+)
+export const RepositoryConfigInputSchema = z.object({
+  mode: z.enum(['local', 'remote']),
+  repoPath: z.string().trim(),
+  remoteUrl: z.string().trim(),
+  defaultBranch: z.string().trim().min(1, 'default branch required').max(255),
+  defaultGroups: NormalizedRepositoryGroupsSchema,
+}).strict().superRefine((value, ctx) => {
+  if (value.mode === 'local' && !value.repoPath) {
+    ctx.addIssue({ code: 'custom', path: ['repoPath'], message: 'local repository path required' })
+  }
+  if (value.mode === 'remote' && !value.remoteUrl) {
+    ctx.addIssue({ code: 'custom', path: ['remoteUrl'], message: 'remote repository URL required' })
+  }
+})
+export type RepositoryConfigInput = z.infer<typeof RepositoryConfigInputSchema>
+export const RepositoryConfigUpdateResultSchema = z.object({
+  config: XcSkillsConfigSchema,
+  repository: RepositoryViewSchema,
+})
+export type RepositoryConfigUpdateResult = z.infer<typeof RepositoryConfigUpdateResultSchema>
 
 export const AssetRecordSchema = z.object({
   id: safeId,
@@ -137,7 +160,15 @@ export const ExternalUrlSchema = z.string().url().refine((value) => {
 export interface DesktopApi {
   projects: { list(): Promise<ProjectRecord[]>; chooseAndAdd(): Promise<ProjectRecord | null>; remove(id: string): Promise<void> }
   agents: { list(): Promise<AgentDefinition[]>; saveCustom(agent: AgentDefinition): Promise<AgentDefinition[]>; removeCustom(id: string): Promise<AgentDefinition[]> }
-  repositories: { getConfig(): Promise<XcSkillsConfig>; listBranches(): Promise<RepositoryBranch[]>; selectBranch(branch: string): Promise<RepositoryView>; setDefaultBranch(branch: string): Promise<XcSkillsConfig>; refresh(): Promise<RepositoryView> }
+  repositories: {
+    getConfig(): Promise<XcSkillsConfig>
+    chooseLocalPath(): Promise<string | null>
+    updateConfig(input: RepositoryConfigInput): Promise<RepositoryConfigUpdateResult>
+    listBranches(): Promise<RepositoryBranch[]>
+    selectBranch(branch: string): Promise<RepositoryView>
+    setDefaultBranch(branch: string): Promise<XcSkillsConfig>
+    refresh(): Promise<RepositoryView>
+  }
   assets: { scan(source: SourceSelection): Promise<AssetRecord[]>; detail(asset: AssetSelection): Promise<AssetDetail>; statuses(asset: AssetSelection): Promise<Array<{ projectId: string | null; agentId: string; path: string; method: InstallMethod | null; status: AssetStatusRecord }>> }
   operations: { plan(input: OperationRequest): Promise<OperationPlan>; execute(planId: string): Promise<OperationResult>; cancel(planId: string): Promise<void>; onProgress(listener: (progress: OperationProgress) => void): () => void }
   preferences: { getTheme(): Promise<ThemePreference>; setTheme(theme: ThemePreference): Promise<void>; getLastSource(): Promise<SourceSelection> }
@@ -147,7 +178,7 @@ export interface DesktopApi {
 export const Channels = {
   projectsList: 'projects:list', projectsChooseAndAdd: 'projects:chooseAndAdd', projectsRemove: 'projects:remove',
   agentsList: 'agents:list', agentsSaveCustom: 'agents:saveCustom', agentsRemoveCustom: 'agents:removeCustom',
-  repositoriesGetConfig: 'repositories:getConfig', repositoriesListBranches: 'repositories:listBranches', repositoriesSelectBranch: 'repositories:selectBranch', repositoriesSetDefaultBranch: 'repositories:setDefaultBranch', repositoriesRefresh: 'repositories:refresh',
+  repositoriesGetConfig: 'repositories:getConfig', repositoriesChooseLocalPath: 'repositories:chooseLocalPath', repositoriesUpdateConfig: 'repositories:updateConfig', repositoriesListBranches: 'repositories:listBranches', repositoriesSelectBranch: 'repositories:selectBranch', repositoriesSetDefaultBranch: 'repositories:setDefaultBranch', repositoriesRefresh: 'repositories:refresh',
   assetsScan: 'assets:scan', assetsDetail: 'assets:detail', assetsStatuses: 'assets:statuses',
   operationsPlan: 'operations:plan', operationsExecute: 'operations:execute', operationsCancel: 'operations:cancel', operationsProgress: 'operations:progress',
   preferencesGetTheme: 'preferences:getTheme', preferencesSetTheme: 'preferences:setTheme', preferencesGetLastSource: 'preferences:getLastSource', systemOpenExternal: 'system:openExternal',

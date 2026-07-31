@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  Channels,
   CustomAgentDirectorySchema,
   OperationRequestSchema,
+  RepositoryConfigInputSchema,
   ThemePreferenceSchema,
   ExternalUrlSchema,
 } from '../../src/shared/ipc.js'
@@ -33,5 +35,66 @@ describe('IPC contracts', () => {
   it('rejects non-http external URLs and invalid themes', () => {
     expect(() => ExternalUrlSchema.parse('file:///etc/passwd')).toThrow()
     expect(() => ThemePreferenceSchema.parse('solarized')).toThrow()
+  })
+
+  it('normalizes editable repository configuration without dropping inactive sources', () => {
+    expect(RepositoryConfigInputSchema.parse({
+      mode: 'local',
+      repoPath: '/tmp/catalog',
+      remoteUrl: 'https://example.com/catalog.git',
+      defaultBranch: ' main ',
+      defaultGroups: [' backend ', 'backend', '', ' common '],
+    })).toEqual({
+      mode: 'local',
+      repoPath: '/tmp/catalog',
+      remoteUrl: 'https://example.com/catalog.git',
+      defaultBranch: 'main',
+      defaultGroups: ['backend', 'common'],
+    })
+
+    expect(RepositoryConfigInputSchema.parse({
+      mode: 'remote',
+      repoPath: '/tmp/catalog',
+      remoteUrl: ' https://example.com/catalog.git ',
+      defaultBranch: 'release',
+      defaultGroups: [],
+    })).toEqual({
+      mode: 'remote',
+      repoPath: '/tmp/catalog',
+      remoteUrl: 'https://example.com/catalog.git',
+      defaultBranch: 'release',
+      defaultGroups: [],
+    })
+  })
+
+  it('rejects a missing active repository source and blank default branch', () => {
+    expect(() => RepositoryConfigInputSchema.parse({
+      mode: 'local',
+      repoPath: '',
+      remoteUrl: 'https://example.com/catalog.git',
+      defaultBranch: 'main',
+      defaultGroups: [],
+    })).toThrow(/local repository path required/)
+
+    expect(() => RepositoryConfigInputSchema.parse({
+      mode: 'remote',
+      repoPath: '/tmp/catalog',
+      remoteUrl: '',
+      defaultBranch: 'main',
+      defaultGroups: [],
+    })).toThrow(/remote repository URL required/)
+
+    expect(() => RepositoryConfigInputSchema.parse({
+      mode: 'remote',
+      repoPath: '/tmp/catalog',
+      remoteUrl: 'https://example.com/catalog.git',
+      defaultBranch: ' ',
+      defaultGroups: [],
+    })).toThrow(/default branch required/)
+  })
+
+  it('uses dedicated channels for repository configuration actions', () => {
+    expect(Channels.repositoriesChooseLocalPath).toBe('repositories:chooseLocalPath')
+    expect(Channels.repositoriesUpdateConfig).toBe('repositories:updateConfig')
   })
 })
