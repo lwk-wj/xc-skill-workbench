@@ -129,8 +129,8 @@ export class CoreService {
     const candidate: XcSkillsConfig = {
       ...current,
       mode: input.mode,
-      repoPath: input.repoPath,
-      remoteUrl: input.remoteUrl,
+      repoPath: input.repoPath || current.repoPath,
+      remoteUrl: input.remoteUrl || current.remoteUrl,
       defaultBranch: input.defaultBranch,
       defaultGroups: input.defaultGroups,
     }

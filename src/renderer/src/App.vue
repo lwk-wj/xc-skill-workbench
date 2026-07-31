@@ -84,6 +84,10 @@ onMounted(() => {
       />
     </ElDrawer>
     <OperationDialog />
-    <SettingsDialog v-model="settingsOpen" @agents-changed="explorer.refreshAgents()" />
+    <SettingsDialog
+      v-model="settingsOpen"
+      @agents-changed="explorer.refreshAgents()"
+      @repository-changed="explorer.refreshRepository()"
+    />
   </main>
 </template>

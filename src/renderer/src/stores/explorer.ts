@@ -147,11 +147,20 @@ export const useExplorerStore = defineStore('explorer', () => {
 
   const refreshAgents = async (): Promise<void> => { agents.value = await window.xcSkills.agents.list() }
   const refreshCurrentSource = async (): Promise<void> => scan(selectedSource.value)
+  const refreshRepository = async (): Promise<void> => {
+    try {
+      await loadBranches()
+      if (selectedSource.value.kind === 'central') await scan(selectedSource.value)
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : '刷新中央仓库失败'
+    }
+  }
 
   return {
     sources, selectedSource, assetType, query, groupFilter, statusFilter, agentFilter, assets, selectedAssetId,
     branches, selectedBranch, loading, error, stale, cachedAt, projects, agents,
     groups, selectedAsset, visibleAssets, agentName,
-    initialize, selectSource, selectBranch, setDefaultBranch, addProject, removeProject, refreshAgents, refreshCurrentSource,
+    initialize, selectSource, selectBranch, setDefaultBranch, addProject, removeProject,
+    refreshAgents, refreshCurrentSource, refreshRepository,
   }
 })

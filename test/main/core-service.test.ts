@@ -224,6 +224,50 @@ describe('CoreService', () => {
     await rm(root, { recursive: true, force: true })
   })
 
+  it('keeps an absent inactive repository source out of the persisted CLI config', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-config-optional-source-'))
+    const oldRoot = join(root, 'old')
+    const newRoot = join(root, 'new')
+    const configPath = join(root, 'config.json')
+    await writeFile(configPath, JSON.stringify({
+      mode: 'local',
+      repoPath: oldRoot,
+      defaultBranch: 'main',
+    }))
+    const service = new CoreService({
+      appStore: new AppStore(join(root, 'state.json')),
+      configPath,
+      cacheRoot: join(root, 'cache'),
+      core: {
+        resolveRepositorySource: async (_config, branch) => ({
+          root: newRoot,
+          branch,
+          kind: 'local-worktree',
+          allowSymlink: true,
+          stale: false,
+          cachedAt: null,
+        }),
+        scanAssets: async () => [],
+      },
+    })
+
+    await service.updateConfig({
+      mode: 'local',
+      repoPath: newRoot,
+      remoteUrl: '',
+      defaultBranch: 'main',
+      defaultGroups: [],
+    })
+
+    expect(JSON.parse(await readFile(configPath, 'utf8'))).toEqual({
+      mode: 'local',
+      repoPath: newRoot,
+      defaultBranch: 'main',
+      defaultGroups: [],
+    })
+    await rm(root, { recursive: true, force: true })
+  })
+
   it('reports copy and symlink installation methods for status locations', async () => {
     const root = await mkdtemp(join(tmpdir(), 'xc-desktop-method-'))
     const centralRoot = join(root, 'central')

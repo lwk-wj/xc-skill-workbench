@@ -32,6 +32,22 @@ test.describe('desktop smoke workflows', () => {
     await expect(readFile(`${e2e.repo}/.git/HEAD`, 'utf8')).resolves.toContain('refs/heads/main')
   })
 
+  test('refreshes central assets immediately after saving repository settings', async ({ e2e }) => {
+    await expect(e2e.page.getByRole('listitem').filter({ hasText: 'demo' }).first()).toBeVisible()
+    await e2e.page.getByRole('button', { name: '设置' }).click()
+    const settings = e2e.page.getByRole('dialog', { name: '设置' })
+    await expect(settings).toBeVisible()
+    const path = settings.getByLabel('本地仓库路径')
+    await expect(path).toHaveValue(e2e.repo)
+    await path.fill(e2e.alternateRepo)
+    await settings.getByRole('button', { name: '保存并刷新' }).click()
+    await expect(settings.getByText('配置已保存，中央仓库已刷新')).toBeVisible()
+    await settings.getByRole('button', { name: '完成' }).click()
+
+    await expect(e2e.page.getByRole('listitem').filter({ hasText: 'replacement' }).first()).toBeVisible()
+    await expect(e2e.page.getByRole('listitem').filter({ hasText: 'demo' })).toHaveCount(0)
+  })
+
   test('opens readable asset details in a wide drawer', async ({ e2e }) => {
     await e2e.page.getByRole('button', { name: /添加项目/ }).click()
     await e2e.page.getByRole('button', { name: '中央仓库' }).click()

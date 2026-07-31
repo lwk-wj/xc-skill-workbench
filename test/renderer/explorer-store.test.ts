@@ -72,4 +72,36 @@ describe('explorer store', () => {
 
     expect(store.assets.map((asset) => asset.name)).toEqual(['Project Skill'])
   })
+
+  it('reloads branches and central assets after repository configuration changes', async () => {
+    const store = useExplorerStore()
+    await store.initialize()
+    vi.mocked(window.xcSkills.assets.scan).mockResolvedValueOnce([
+      { ...skill, id: 'replacement-skill', name: 'Replacement Skill' },
+    ])
+
+    await store.refreshRepository()
+
+    expect(window.xcSkills.repositories.listBranches).toHaveBeenCalledTimes(2)
+    expect(window.xcSkills.assets.scan).toHaveBeenLastCalledWith({ kind: 'central' })
+    expect(store.assets.map((asset) => asset.name)).toEqual(['Replacement Skill'])
+  })
+
+  it('reloads branches without replacing assets while a project is selected', async () => {
+    vi.mocked(window.xcSkills.assets.scan).mockImplementation(async (source) => (
+      source.kind === 'project'
+        ? [{ ...skill, id: 'project-skill', name: 'Project Skill' }]
+        : [skill]
+    ))
+    const store = useExplorerStore()
+    await store.initialize()
+    await store.selectSource(store.sources.find((source) => source.kind === 'project')!)
+    vi.mocked(window.xcSkills.assets.scan).mockClear()
+
+    await store.refreshRepository()
+
+    expect(window.xcSkills.repositories.listBranches).toHaveBeenCalledTimes(2)
+    expect(window.xcSkills.assets.scan).not.toHaveBeenCalled()
+    expect(store.assets.map((asset) => asset.name)).toEqual(['Project Skill'])
+  })
 })
