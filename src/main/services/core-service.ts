@@ -23,9 +23,11 @@ import {
 import type {
   AgentDefinition, AssetDetail, AssetRecord, AssetSelection, AssetStatusRecord as DesktopStatus,
   DesktopState, OperationPlan, OperationRequest, OperationResult, ProjectRecord, RepositoryBranch,
-  RepositoryView, SourceSelection,
+  RepositoryConfigInput, RepositoryConfigUpdateResult, RepositoryView, SourceSelection,
 } from '../../shared/ipc.js'
-import { AssetRecordSchema, AssetDetailSchema, AssetStatusRecordSchema } from '../../shared/ipc.js'
+import {
+  AssetRecordSchema, AssetDetailSchema, AssetStatusRecordSchema, XcSkillsConfigSchema,
+} from '../../shared/ipc.js'
 import type { AppStore } from './app-store.js'
 
 type ChooseDirectory = () => Promise<string | null | undefined>
@@ -122,6 +124,47 @@ export class CoreService {
   async removeCustomAgent(id: string): Promise<AgentDefinition[]> { return this.appStore.removeCustomAgent(id) }
 
   async getConfig(): Promise<XcSkillsConfig> { return this.ensureConfig() }
+  async updateConfig(input: RepositoryConfigInput): Promise<RepositoryConfigUpdateResult> {
+    const current = await this.ensureConfig()
+    const candidate: XcSkillsConfig = {
+      ...current,
+      mode: input.mode,
+      repoPath: input.repoPath,
+      remoteUrl: input.remoteUrl,
+      defaultBranch: input.defaultBranch,
+      defaultGroups: input.defaultGroups,
+    }
+    try {
+      const repository = await this.core.resolveRepositorySource(
+        candidate,
+        input.defaultBranch,
+        this.cacheRoot,
+      )
+      await this.core.scanAssets({ root: repository.root })
+      await this.core.writeConfig(candidate, this.configPath)
+      this.config = candidate
+      this.selectedBranch = input.defaultBranch
+      this.repository = repository
+      this.catalog.clear()
+      this.coreCatalog.clear()
+      this.metadata.clear()
+      this.locations.clear()
+      return {
+        config: XcSkillsConfigSchema.parse(candidate),
+        repository: this.repositoryView(),
+      }
+    } catch (error) {
+      const code = typeof error === 'object' && error && 'code' in error
+        ? String(error.code)
+        : 'UNKNOWN'
+      await this.log?.write('error', 'repository configuration update failed', {
+        mode: input.mode,
+        branch: input.defaultBranch,
+        code,
+      })
+      throw error
+    }
+  }
   async listBranches(): Promise<RepositoryBranch[]> { return this.core.listBranches(await this.ensureConfig()) }
   async selectBranch(branch: string): Promise<RepositoryView> {
     this.selectedBranch = branch

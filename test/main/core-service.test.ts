@@ -78,6 +78,152 @@ describe('CoreService', () => {
     await rm(root, { recursive: true, force: true })
   })
 
+  it('validates, persists, and activates a repository configuration without dropping CLI fields', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-config-update-'))
+    const oldRoot = join(root, 'old')
+    const newRoot = join(root, 'new')
+    const configPath = join(root, 'config.json')
+    const cacheRoot = join(root, 'cache')
+    const calls: string[] = []
+    const service = new CoreService({
+      appStore: new AppStore(join(root, 'state.json')),
+      configPath,
+      cacheRoot,
+      core: {
+        readConfig: async () => ({
+          mode: 'local',
+          repoPath: oldRoot,
+          remoteUrl: 'https://example.com/catalog.git',
+          defaultBranch: 'legacy',
+          customCliFlag: true,
+        }),
+        resolveRepositorySource: async (config, branch, receivedCacheRoot) => {
+          calls.push(`resolve:${config.mode}:${branch}:${receivedCacheRoot}`)
+          expect(config).toMatchObject({
+            mode: 'local',
+            repoPath: newRoot,
+            remoteUrl: 'https://example.com/catalog.git',
+            defaultBranch: 'main',
+            defaultGroups: ['backend'],
+            customCliFlag: true,
+          })
+          return {
+            root: newRoot,
+            branch,
+            kind: 'local-worktree',
+            allowSymlink: true,
+            stale: false,
+            cachedAt: null,
+          }
+        },
+        scanAssets: async ({ root: receivedRoot }) => {
+          calls.push(`scan:${receivedRoot}`)
+          return []
+        },
+        writeConfig: async (config, receivedConfigPath) => {
+          calls.push(`write:${config.repoPath}:${receivedConfigPath}`)
+          expect(config).toMatchObject({ customCliFlag: true, repoPath: newRoot })
+        },
+      },
+    })
+
+    const result = await service.updateConfig({
+      mode: 'local',
+      repoPath: newRoot,
+      remoteUrl: 'https://example.com/catalog.git',
+      defaultBranch: 'main',
+      defaultGroups: ['backend'],
+    })
+
+    expect(calls).toEqual([
+      `resolve:local:main:${cacheRoot}`,
+      `scan:${newRoot}`,
+      `write:${newRoot}:${configPath}`,
+    ])
+    expect(result.repository).toEqual({
+      branch: 'main',
+      kind: 'local-worktree',
+      allowSymlink: true,
+      stale: false,
+      cachedAt: null,
+    })
+    expect(result.config).toMatchObject({ repoPath: newRoot, customCliFlag: true })
+    expect(await service.getConfig()).toMatchObject({ repoPath: newRoot, customCliFlag: true })
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it('keeps the active configuration when candidate repository validation fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-config-resolve-failure-'))
+    const oldRoot = join(root, 'old')
+    const writeConfig = vi.fn()
+    const service = new CoreService({
+      appStore: new AppStore(join(root, 'state.json')),
+      configPath: join(root, 'config.json'),
+      core: {
+        readConfig: async () => ({ mode: 'local', repoPath: oldRoot, defaultBranch: 'main' }),
+        resolveRepositorySource: async () => {
+          throw new Error('repository unavailable')
+        },
+        writeConfig,
+      },
+    })
+    await service.getConfig()
+
+    await expect(service.updateConfig({
+      mode: 'remote',
+      repoPath: oldRoot,
+      remoteUrl: 'https://example.com/new.git',
+      defaultBranch: 'main',
+      defaultGroups: [],
+    })).rejects.toThrow('repository unavailable')
+
+    expect(writeConfig).not.toHaveBeenCalled()
+    expect(await service.getConfig()).toMatchObject({ mode: 'local', repoPath: oldRoot })
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it('keeps the active configuration when persisting a validated candidate fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-config-write-failure-'))
+    const oldRoot = join(root, 'old')
+    const newRoot = join(root, 'new')
+    const service = new CoreService({
+      appStore: new AppStore(join(root, 'state.json')),
+      configPath: join(root, 'config.json'),
+      cacheRoot: join(root, 'cache'),
+      core: {
+        readConfig: async () => ({ mode: 'local', repoPath: oldRoot, defaultBranch: 'main' }),
+        resolveRepositorySource: async (_config, branch) => ({
+          root: newRoot,
+          branch,
+          kind: 'local-worktree',
+          allowSymlink: true,
+          stale: false,
+          cachedAt: null,
+        }),
+        scanAssets: async () => [],
+        writeConfig: async () => {
+          throw new Error('config is read-only')
+        },
+      },
+    })
+    await service.getConfig()
+
+    await expect(service.updateConfig({
+      mode: 'local',
+      repoPath: newRoot,
+      remoteUrl: '',
+      defaultBranch: 'next',
+      defaultGroups: ['frontend'],
+    })).rejects.toThrow('config is read-only')
+
+    expect(await service.getConfig()).toMatchObject({
+      mode: 'local',
+      repoPath: oldRoot,
+      defaultBranch: 'main',
+    })
+    await rm(root, { recursive: true, force: true })
+  })
+
   it('reports copy and symlink installation methods for status locations', async () => {
     const root = await mkdtemp(join(tmpdir(), 'xc-desktop-method-'))
     const centralRoot = join(root, 'central')
