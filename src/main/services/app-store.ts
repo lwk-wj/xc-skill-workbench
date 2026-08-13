@@ -125,6 +125,15 @@ export class AppStore {
     return (await this.update((state) => ({ ...state, customAgents: state.customAgents.filter((agent) => agent.id !== parsed) }))).customAgents
   }
 
+  async setAgentEnabled(id: string, enabled: boolean): Promise<void> {
+    const parsedId = z.string().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/).parse(id)
+    const parsedEnabled = z.boolean().parse(enabled)
+    await this.update((state) => ({
+      ...state,
+      agentEnabled: { ...state.agentEnabled, [parsedId]: parsedEnabled },
+    }))
+  }
+
   async setTheme(theme: ThemePreference): Promise<void> {
     const parsed = ThemePreferenceSchema.parse(theme)
     await this.update((state) => ({ ...state, theme: parsed }))

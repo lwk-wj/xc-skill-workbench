@@ -50,7 +50,10 @@ const saveAgent = async (agent: AgentDefinition): Promise<void> => {
 
 const toggleAgent = async (agent: AgentDefinition): Promise<void> => {
   try {
-    agents.value = await window.xcSkills.agents.saveCustom({ ...agent, enabled: !agent.enabled })
+    agents.value = agent.builtIn
+      ? await window.xcSkills.agents.setEnabled(agent.id, !agent.enabled)
+      : await window.xcSkills.agents.saveCustom({ ...agent, enabled: !agent.enabled })
+    error.value = null
     emit('agentsChanged')
   } catch (cause) { error.value = cause }
 }

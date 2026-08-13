@@ -11,6 +11,7 @@ const api: DesktopApi = {
   },
   agents: {
     list: () => invoke(Channels.agentsList),
+    setEnabled: (id, enabled) => invoke(Channels.agentsSetEnabled, { id, enabled }),
     saveCustom: (agent) => invoke(Channels.agentsSaveCustom, agent),
     removeCustom: (id) => invoke(Channels.agentsRemoveCustom, id),
   },

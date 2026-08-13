@@ -118,7 +118,21 @@ export class CoreService {
     const state = await this.appStore.read()
     const builtins = this.core.BUILTIN_AGENTS as unknown as AgentDefinition[]
     const overrides = new Map(state.customAgents.map((agent) => [agent.id, agent]))
-    return [...builtins.map((agent) => overrides.get(agent.id) ?? agent), ...state.customAgents.filter((agent) => !agent.builtIn)]
+    return [
+      ...builtins.map((agent) => {
+        const definition = overrides.get(agent.id) ?? agent
+        return { ...definition, enabled: state.agentEnabled[agent.id] ?? definition.enabled }
+      }),
+      ...state.customAgents
+        .filter((agent) => !agent.builtIn)
+        .map((agent) => ({ ...agent, enabled: state.agentEnabled[agent.id] ?? agent.enabled })),
+    ]
+  }
+  async setAgentEnabled(id: string, enabled: boolean): Promise<AgentDefinition[]> {
+    const known = (await this.listAgents()).some((agent) => agent.id === id)
+    if (!known) throw new Error(`unknown Agent id: ${id}`)
+    await this.appStore.setAgentEnabled(id, enabled)
+    return this.listAgents()
   }
   async saveCustomAgent(agent: AgentDefinition): Promise<AgentDefinition[]> { return this.appStore.addCustomAgent(agent) }
   async removeCustomAgent(id: string): Promise<AgentDefinition[]> { return this.appStore.removeCustomAgent(id) }

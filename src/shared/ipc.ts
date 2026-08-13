@@ -46,6 +46,7 @@ export const DesktopStateSchema = z.object({
   version: z.literal(1),
   projects: z.array(ProjectRecordSchema),
   customAgents: z.array(AgentDefinitionSchema),
+  agentEnabled: z.record(safeId, z.boolean()).default({}),
   theme: ThemePreferenceSchema,
   lastSource: SourceSelectionSchema,
   windowBounds: WindowBoundsSchema.nullable(),
@@ -159,7 +160,7 @@ export const ExternalUrlSchema = z.string().url().refine((value) => {
 
 export interface DesktopApi {
   projects: { list(): Promise<ProjectRecord[]>; chooseAndAdd(): Promise<ProjectRecord | null>; remove(id: string): Promise<void> }
-  agents: { list(): Promise<AgentDefinition[]>; saveCustom(agent: AgentDefinition): Promise<AgentDefinition[]>; removeCustom(id: string): Promise<AgentDefinition[]> }
+  agents: { list(): Promise<AgentDefinition[]>; setEnabled(id: string, enabled: boolean): Promise<AgentDefinition[]>; saveCustom(agent: AgentDefinition): Promise<AgentDefinition[]>; removeCustom(id: string): Promise<AgentDefinition[]> }
   repositories: {
     getConfig(): Promise<XcSkillsConfig>
     chooseLocalPath(): Promise<string | null>
@@ -177,7 +178,7 @@ export interface DesktopApi {
 
 export const Channels = {
   projectsList: 'projects:list', projectsChooseAndAdd: 'projects:chooseAndAdd', projectsRemove: 'projects:remove',
-  agentsList: 'agents:list', agentsSaveCustom: 'agents:saveCustom', agentsRemoveCustom: 'agents:removeCustom',
+  agentsList: 'agents:list', agentsSetEnabled: 'agents:setEnabled', agentsSaveCustom: 'agents:saveCustom', agentsRemoveCustom: 'agents:removeCustom',
   repositoriesGetConfig: 'repositories:getConfig', repositoriesChooseLocalPath: 'repositories:chooseLocalPath', repositoriesUpdateConfig: 'repositories:updateConfig', repositoriesListBranches: 'repositories:listBranches', repositoriesSelectBranch: 'repositories:selectBranch', repositoriesSetDefaultBranch: 'repositories:setDefaultBranch', repositoriesRefresh: 'repositories:refresh',
   assetsScan: 'assets:scan', assetsDetail: 'assets:detail', assetsStatuses: 'assets:statuses',
   operationsPlan: 'operations:plan', operationsExecute: 'operations:execute', operationsCancel: 'operations:cancel', operationsProgress: 'operations:progress',
@@ -186,4 +187,4 @@ export const Channels = {
 /** Stable alias for Main/Preload consumers that prefer an explicit channel namespace. */
 export const IPC_CHANNELS = Channels
 
-export const DesktopStateDefaults: DesktopState = { version: 1, projects: [], customAgents: [], theme: 'system', lastSource: { kind: 'central' }, windowBounds: null }
+export const DesktopStateDefaults: DesktopState = { version: 1, projects: [], customAgents: [], agentEnabled: {}, theme: 'system', lastSource: { kind: 'central' }, windowBounds: null }

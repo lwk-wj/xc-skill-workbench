@@ -74,6 +74,25 @@ test.describe('desktop smoke workflows', () => {
     }
   })
 
+  test('toggles a built-in Agent without losing the other built-ins', async ({ e2e }) => {
+    await e2e.page.getByRole('button', { name: '设置' }).click()
+    const dialog = e2e.page.getByRole('dialog', { name: '设置' })
+    const antigravity = dialog.getByRole('switch', { name: '启用 Antigravity' })
+    await expect(antigravity).toBeChecked()
+    await antigravity.scrollIntoViewIfNeeded()
+    await e2e.page.waitForTimeout(250)
+
+    await dialog.locator('.agent-row').filter({ hasText: 'Antigravity' }).locator('.el-switch').click()
+
+    await expect(antigravity).not.toBeChecked()
+    await expect(dialog.getByRole('alert')).toHaveCount(0)
+    await expect(dialog.getByRole('switch', { name: /^启用 / })).toHaveCount(4)
+
+    await dialog.getByRole('button', { name: '完成' }).click()
+    await e2e.page.getByRole('button', { name: '设置' }).click()
+    await expect(e2e.page.getByRole('dialog', { name: '设置' }).getByRole('switch', { name: '启用 Antigravity' })).not.toBeChecked()
+  })
+
   test('opens readable asset details in a wide drawer', async ({ e2e }) => {
     await e2e.page.getByRole('button', { name: /添加项目/ }).click()
     await e2e.page.getByRole('button', { name: '中央仓库' }).click()
