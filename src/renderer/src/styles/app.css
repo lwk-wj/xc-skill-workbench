@@ -1349,10 +1349,19 @@ h3 {
 
 /* Settings */
 
+.settings-modal-overlay .el-overlay-dialog {
+  display: grid;
+  overflow: hidden;
+  overscroll-behavior: none;
+  place-items: center;
+  padding: 24px;
+}
+
 .settings-dialog {
   display: flex;
-  max-height: calc(100vh - 48px);
+  max-height: 100%;
   flex-direction: column;
+  margin: 0;
   overflow: hidden;
   border: 1px solid var(--border-strong);
   background: var(--surface-raised);
@@ -1374,6 +1383,9 @@ h3 {
 }
 
 .settings-dialog .el-dialog__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   min-height: 0;
   padding: 0;
   overflow: hidden;
@@ -1385,7 +1397,14 @@ h3 {
 }
 
 .settings-dialog .settings-content {
-  max-height: calc(100vh - 190px);
+  min-height: 0;
+  max-height: none;
+  overscroll-behavior: contain;
+}
+
+.settings-dialog .error-notice {
+  flex: none;
+  margin: 18px 23px 0;
 }
 
 .settings-overlay,

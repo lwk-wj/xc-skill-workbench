@@ -70,7 +70,7 @@ const handleRepositorySaved = (next: XcSkillsConfig): void => {
 </script>
 
 <template>
-  <ElDialog v-model="visible" class="settings-dialog" title="设置" width="min(780px, calc(100vw - 48px))" aria-label="设置" append-to-body>
+  <ElDialog v-model="visible" class="settings-dialog" modal-class="settings-modal-overlay" title="设置" width="min(780px, calc(100vw - 48px))" aria-label="设置" append-to-body>
     <ErrorNotice v-if="error" :error="error as Error" />
     <div class="settings-content">
       <section class="settings-section">
