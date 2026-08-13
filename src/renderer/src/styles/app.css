@@ -1507,22 +1507,38 @@ h3 {
 }
 
 .theme-control select,
-.custom-agent-form input {
+.custom-agent-form .el-input__wrapper {
   min-height: 36px;
-  border: 1px solid var(--border);
   border-radius: 7px;
   background: var(--control-surface);
   color: var(--text-primary);
-  padding: 7px 9px;
+  padding: 0 10px;
+  box-shadow: 0 0 0 1px var(--border) inset;
+  transition: background 140ms ease, box-shadow 140ms ease;
 }
 
-.custom-agent-form input:hover {
-  border-color: var(--border-strong);
+.custom-agent-form .el-input__inner {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+  outline: 0;
 }
 
-.custom-agent-form input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+.custom-agent-form .el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--border-strong) inset;
+}
+
+.custom-agent-form .el-input.is-focus .el-input__wrapper {
+  background: var(--surface-raised);
+  box-shadow: 0 0 0 1px var(--accent) inset, 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+
+.el-input__inner:focus-visible,
+.el-select__input:focus-visible,
+.el-textarea__inner:focus-visible {
   outline: 0;
 }
 

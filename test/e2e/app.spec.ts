@@ -93,6 +93,40 @@ test.describe('desktop smoke workflows', () => {
     await expect(e2e.page.getByRole('dialog', { name: '设置' }).getByRole('switch', { name: '启用 Antigravity' })).not.toBeChecked()
   })
 
+  test('renders custom Agent fields as single-layer Element Plus inputs', async ({ e2e }) => {
+    await e2e.page.getByRole('button', { name: '设置' }).click()
+    const dialog = e2e.page.getByRole('dialog', { name: '设置' })
+    const defaultBranch = dialog.getByRole('textbox', { name: '默认分支' })
+    await defaultBranch.click()
+    expect(await defaultBranch.evaluate((element) => getComputedStyle(element).outlineWidth)).toBe('0px')
+    await dialog.getByRole('button', { name: '添加自定义 Agent' }).click()
+
+    const input = dialog.getByRole('textbox', { name: 'Agent ID' })
+    const wrapper = input.locator('..')
+    await input.focus()
+    const styles = await input.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return {
+        borderTopWidth: style.borderTopWidth,
+        outlineStyle: style.outlineStyle,
+        paddingLeft: style.paddingLeft,
+      }
+    })
+    expect(styles).toEqual({ borderTopWidth: '0px', outlineStyle: 'none', paddingLeft: '0px' })
+
+    const relativeFields = dialog.locator('.custom-agent-form fieldset .el-form-item')
+    for (let index = 0; index < await relativeFields.count() - 1; index += 1) {
+      const currentInput = relativeFields.nth(index).locator('.el-input__wrapper')
+      const nextLabel = relativeFields.nth(index + 1).locator('.form-label')
+      const [inputBox, labelBox] = await Promise.all([currentInput.boundingBox(), nextLabel.boundingBox()])
+      expect(inputBox).not.toBeNull()
+      expect(labelBox).not.toBeNull()
+      expect(labelBox!.y - (inputBox!.y + inputBox!.height)).toBeGreaterThanOrEqual(9)
+    }
+
+    await expect(wrapper).toHaveClass(/el-input__wrapper/)
+  })
+
   test('opens readable asset details in a wide drawer', async ({ e2e }) => {
     await e2e.page.getByRole('button', { name: /添加项目/ }).click()
     await e2e.page.getByRole('button', { name: '中央仓库' }).click()
