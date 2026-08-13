@@ -48,21 +48,30 @@ test.describe('desktop smoke workflows', () => {
     await expect(e2e.page.getByRole('listitem').filter({ hasText: 'demo' })).toHaveCount(0)
   })
 
-  test('keeps the settings dialog fixed when its content reaches a scroll boundary', async ({ e2e }) => {
+  test('scrolls only the settings content while the dialog chrome stays fixed', async ({ e2e }) => {
     await e2e.page.getByRole('button', { name: '设置' }).click()
     const dialog = e2e.page.getByRole('dialog', { name: '设置' })
     const panel = dialog.locator('.settings-dialog')
     const header = panel.locator('.el-dialog__header')
+    const content = panel.locator('.settings-content')
+    const footer = panel.locator('.el-dialog__footer')
     await expect(dialog).toBeVisible()
     await e2e.page.waitForTimeout(250)
 
-    const before = await panel.evaluate((element) => element.getBoundingClientRect().top)
-    await header.hover()
-    await e2e.page.mouse.wheel(0, 1_200)
-    const after = await panel.evaluate((element) => element.getBoundingClientRect().top)
+    const before = await Promise.all([panel, header, footer].map((locator) => (
+      locator.evaluate((element) => element.getBoundingClientRect().top)
+    )))
+    await content.hover()
+    await e2e.page.mouse.wheel(0, 10_000)
+    const after = await Promise.all([panel, header, footer].map((locator) => (
+      locator.evaluate((element) => element.getBoundingClientRect().top)
+    )))
 
+    expect(await content.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
     expect(await dialog.evaluate((element) => element.scrollTop)).toBe(0)
-    expect(Math.abs(after - before)).toBeLessThan(1)
+    for (let index = 0; index < before.length; index += 1) {
+      expect(Math.abs(after[index] - before[index])).toBeLessThan(1)
+    }
   })
 
   test('opens readable asset details in a wide drawer', async ({ e2e }) => {
