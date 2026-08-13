@@ -16,5 +16,6 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
-  identity: null
+  # Ad-hoc sign test builds recursively so transferred apps keep a valid bundle signature.
+  identity: "-"
 asar: true
