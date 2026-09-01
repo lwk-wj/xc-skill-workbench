@@ -10,6 +10,7 @@ import {
 } from '../../shared/ipc.js'
 import type { AppStore } from '../services/app-store.js'
 import type { CoreService } from '../services/core-service.js'
+import type { ThirdPartyRepositoryService } from '../services/third-party-repository-service.js'
 import { z } from 'zod'
 
 type IpcMainLike = { handle(channel: string, listener: (event: unknown, input?: unknown) => unknown): void }
@@ -51,6 +52,7 @@ export interface RegisterIpcOptions {
   shell?: ShellLike
   builtInAgentIds?: string[]
   coreService?: CoreService
+  thirdPartyRepositoryService?: ThirdPartyRepositoryService
 }
 
 const unsupported = (name: string): never => { throw new Error(`${name} is not available`) }

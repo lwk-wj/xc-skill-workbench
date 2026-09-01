@@ -29,6 +29,7 @@ import {
   AssetRecordSchema, AssetDetailSchema, AssetStatusRecordSchema, XcSkillsConfigSchema,
 } from '../../shared/ipc.js'
 import type { AppStore } from './app-store.js'
+import type { ThirdPartyRepositoryService } from './third-party-repository-service.js'
 
 type ChooseDirectory = () => Promise<string | null | undefined>
 type CatalogMeta = { source: SourceSelection; projectId: string | null; agentId: string | null; method: null }
@@ -40,6 +41,7 @@ type CoreServiceOptions = {
   chooseDirectory?: ChooseDirectory
   log?: { write(level: string, message: string, context?: unknown): Promise<void> }
   core?: CoreOverrides
+  thirdPartyRepositories?: ThirdPartyRepositoryService
 }
 
 const asDesktopAsset = (asset: unknown): AssetRecord => AssetRecordSchema.parse(asset)
@@ -55,6 +57,7 @@ export class CoreService {
   private readonly cacheRoot: string
   private readonly chooseDirectory: ChooseDirectory
   private readonly log?: CoreServiceOptions['log']
+  private readonly thirdPartyRepositories?: ThirdPartyRepositoryService
   private readonly core: typeof import('xc-skills/core')
   private config: XcSkillsConfig | null = null
   private selectedBranch: string | null = null
@@ -84,6 +87,7 @@ export class CoreService {
     this.cacheRoot = resolve(options.cacheRoot ?? join(homedir(), '.cache', 'xc-skills'))
     this.chooseDirectory = options.chooseDirectory ?? (async () => null)
     this.log = options.log
+    this.thirdPartyRepositories = options.thirdPartyRepositories
     this.core = { ...{
       BUILTIN_AGENTS, evaluateAssetStatus, executeOperation, listBranches, planOperation, readAssetDetail,
       readConfig, resolveAgentAssetRoot, resolveRepositorySource, scanAssets, setDefaultBranch: coreSetDefaultBranch, writeConfig,
@@ -240,7 +244,10 @@ export class CoreService {
       result.push(...await this.scanRoot(source, repo.root, null, null))
       return result
     }
-    if (source.kind === 'third-party') throw new Error('third-party repository service is not available')
+    if (source.kind === 'third-party') {
+      if (!this.thirdPartyRepositories) throw new Error('third-party repository service is not available')
+      throw new Error('third-party repository source integration is not available')
+    }
     const state = await this.appStore.read()
     const project = source.kind === 'project' ? state.projects.find((entry) => entry.id === source.projectId) : null
     if (source.kind === 'project' && !project) return []

@@ -8,6 +8,7 @@ import { AppStore } from './services/app-store.js'
 import { registerIpc } from './ipc/register-ipc.js'
 import { CoreService } from './services/core-service.js'
 import { LogService } from './services/log-service.js'
+import { ThirdPartyRepositoryService } from './services/third-party-repository-service.js'
 import type { WindowBounds } from '../shared/ipc.js'
 
 const rendererUrl = process.env.ELECTRON_RENDERER_URL
@@ -84,6 +85,11 @@ app.whenReady().then(async () => {
   const userData = app.getPath('userData')
   const appStore = new AppStore(join(userData, 'state.json'))
   const log = new LogService(userData)
+  const thirdPartyRepositoryService = new ThirdPartyRepositoryService({
+    appStore,
+    cacheRoot: join(userData, 'cache'),
+    log,
+  })
   const coreService = new CoreService({
     appStore,
     configPath: e2eEnabled && process.env.XC_SKILLS_CONFIG_PATH
@@ -96,11 +102,13 @@ app.whenReady().then(async () => {
       return picked.canceled || !picked.filePaths[0] ? null : picked.filePaths[0]
     },
     log,
+    thirdPartyRepositories: thirdPartyRepositoryService,
   })
   registerIpc({
     ipcMain,
     appStore,
     coreService,
+    thirdPartyRepositoryService,
     builtInAgentIds: BUILTIN_AGENTS.map((agent) => agent.id),
     dialog: { showOpenDialog: (options) => dialog.showOpenDialog(options) },
     shell,
