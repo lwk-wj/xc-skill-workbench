@@ -451,7 +451,7 @@ describe('CoreService', () => {
     const store = new AppStore(join(root, 'state.json'))
     const timestamp = '2026-09-01T00:00:00.000Z'
     for (const id of ['repo-1', 'repo-2']) {
-      await store.saveThirdPartyRepository({ id, name: id, url: `https://example.com/${id}.git`, branch: 'main', layout: 'catalog', createdAt: timestamp, lastFetchedAt: timestamp })
+      await store.saveThirdPartyRepository({ id, name: id, url: `https://example.com/${id}.git`, branch: 'main', layout: 'catalog', skillRoots: [], createdAt: timestamp, lastFetchedAt: timestamp })
     }
     const rawAssets = new Map(['repo-1', 'repo-2'].map((id) => [id, {
       id: 'same-asset-id', type: 'skills' as const, name: 'shared-skill', group: 'common',
@@ -525,7 +525,7 @@ describe('CoreService', () => {
     const targetPath = join(root, 'installed', 'demo')
     await mkdir(targetPath, { recursive: true })
     const store = new AppStore(join(root, 'state.json'))
-    const repository = { id: 'repo-1', name: 'Team Skills', url: 'https://example.com/team.git', branch: 'main', layout: 'catalog' as const, createdAt: '2026-09-01T00:00:00.000Z', lastFetchedAt: '2026-09-01T01:00:00.000Z' }
+    const repository = { id: 'repo-1', name: 'Team Skills', url: 'https://example.com/team.git', branch: 'main', layout: 'catalog' as const, skillRoots: [], createdAt: '2026-09-01T00:00:00.000Z', lastFetchedAt: '2026-09-01T01:00:00.000Z' }
     await store.saveThirdPartyRepository(repository)
     await store.upsertInstallationSource({
       id: 'install-1', scope: 'global', projectId: null, agentId: 'codex', targetPath,
@@ -555,7 +555,7 @@ describe('CoreService', () => {
     const sourceRoot = join(root, 'source', 'demo')
     await mkdir(sourceRoot, { recursive: true })
     const store = new AppStore(join(root, 'state.json'))
-    const repository = { id: 'repo-1', name: 'Team Skills', url: 'https://example.com/team.git', branch: 'main', layout: 'catalog' as const, createdAt: '2026-09-01T00:00:00.000Z', lastFetchedAt: '2026-09-01T01:00:00.000Z' }
+    const repository = { id: 'repo-1', name: 'Team Skills', url: 'https://example.com/team.git', branch: 'main', layout: 'catalog' as const, skillRoots: [], createdAt: '2026-09-01T00:00:00.000Z', lastFetchedAt: '2026-09-01T01:00:00.000Z' }
     await store.saveThirdPartyRepository(repository)
     const rawAsset = { id: 'asset-1', type: 'skills' as const, name: 'demo', group: '', path: sourceRoot, entryPath: join(sourceRoot, 'SKILL.md'), entryState: 'active' as const, description: 'Demo', version: null }
     const thirdPartyRepositories = { resolve: async () => ({ repository, root: join(root, 'source'), branch: 'main', commit: 'b'.repeat(40), layout: 'catalog' as const, stale: false, cachedAt: repository.lastFetchedAt, lastError: null, assets: [rawAsset], coreAssets: [rawAsset] }) }
@@ -607,7 +607,7 @@ describe('CoreService', () => {
     const targetPath = join(targetRoot, 'demo')
     await mkdir(targetPath, { recursive: true })
     const store = new AppStore(join(root, 'state.json'))
-    const repository = { id: 'repo-1', name: 'Team Skills', url: 'https://example.com/team.git', branch: 'main', layout: 'catalog' as const, createdAt: '2026-09-01T00:00:00.000Z', lastFetchedAt: null }
+    const repository = { id: 'repo-1', name: 'Team Skills', url: 'https://example.com/team.git', branch: 'main', layout: 'catalog' as const, skillRoots: [], createdAt: '2026-09-01T00:00:00.000Z', lastFetchedAt: null }
     await store.saveThirdPartyRepository(repository)
     await store.upsertInstallationSource({ id: 'install-1', scope: 'global', projectId: null, agentId: 'codex', targetPath, asset: { type: 'skills', group: '', name: 'demo' }, source: { kind: 'central', repositoryId: null, repositoryName: '中央仓库', repositoryUrl: null }, installedCommit: null, installedHash: 'old' })
     const rawAsset = { id: 'asset-1', type: 'skills' as const, name: 'demo', group: '', path: join(root, 'source'), entryPath: join(root, 'source', 'SKILL.md'), entryState: 'active' as const, description: 'Demo', version: null }

@@ -149,7 +149,7 @@ describe('AppStore', () => {
     const store = new AppStore(join(root, 'state.json'))
     const repository = {
       id: 'repo-1', name: 'Team Skills', url: 'https://example.com/team/skills.git', branch: 'main',
-      layout: 'catalog' as const, createdAt: '2026-09-01T00:00:00.000Z', lastFetchedAt: null,
+      layout: 'catalog' as const, skillRoots: [], createdAt: '2026-09-01T00:00:00.000Z', lastFetchedAt: null,
     }
     await expect(store.saveThirdPartyRepository(repository)).resolves.toEqual([repository])
     await store.setLastSource({ kind: 'third-party', repositoryId: repository.id })

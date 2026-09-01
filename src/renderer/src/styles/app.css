@@ -1643,6 +1643,99 @@ h3 {
   font-weight: 400;
 }
 
+.repository-skill-roots {
+  display: grid;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-muted) 58%, transparent);
+}
+
+.repository-skill-roots-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.repository-skill-roots-header strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.repository-skill-roots-header p {
+  margin: 4px 0 0;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.repository-skill-root-list {
+  display: grid;
+  gap: 10px;
+}
+
+.repository-skill-root-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr) 30px;
+  align-items: end;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.repository-skill-root-field {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.repository-skill-root-field > span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.repository-skill-root-remove.el-button {
+  width: 30px;
+  height: 32px;
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 20px;
+}
+
+.repository-skill-root-remove.el-button:hover {
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+}
+
+.repository-skill-roots-empty {
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 9px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  text-align: center;
+}
+
+@media (max-width: 620px) {
+  .repository-skill-root-row {
+    grid-template-columns: 1fr 30px;
+  }
+
+  .repository-skill-root-field:nth-child(2) {
+    grid-column: 1;
+  }
+
+  .repository-skill-root-remove.el-button {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+}
+
 .repository-validation-result {
   display: flex;
   gap: 15px;

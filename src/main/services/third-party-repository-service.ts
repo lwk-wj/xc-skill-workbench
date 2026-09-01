@@ -11,6 +11,7 @@ import {
   type AssetRecord,
   type ThirdPartyRepository,
   type ThirdPartyRepositoryInput,
+  type ThirdPartySkillRoot,
   type ThirdPartyRepositoryView,
 } from '../../shared/ipc.js'
 import type { AppStore } from './app-store.js'
@@ -39,6 +40,7 @@ export interface ThirdPartyCoreAdapter {
     types: ['skills']
     layout: 'catalog' | 'single-skill'
     sourceName: string
+    skillRoots?: ThirdPartySkillRoot[]
   }): Promise<unknown[]>
 }
 
@@ -128,23 +130,37 @@ export class ThirdPartyRepositoryService {
     }
   }
 
-  private async normalizedInput(input: ThirdPartyRepositoryInput): Promise<{ url: string; name: string; branch: string }> {
+  private async normalizedInput(input: ThirdPartyRepositoryInput): Promise<{
+    url: string
+    name: string
+    branch: string
+    skillRoots: ThirdPartySkillRoot[]
+  }> {
     const parsed = ThirdPartyRepositoryInputSchema.parse(input)
     const url = await this.core.normalizeRepositorySource(parsed.url)
     assertRemoteSource(url)
     const branch = parsed.branch ?? await this.core.resolveDefaultBranch({ mode: 'remote', remoteUrl: url })
-    return { url, branch, name: repositoryName.parse(parsed.name ?? inferName(url)) }
+    return {
+      url,
+      branch,
+      name: repositoryName.parse(parsed.name ?? inferName(url)),
+      skillRoots: parsed.skillRoots ?? [],
+    }
   }
 
   private async prepare(repository: ThirdPartyRepository): Promise<ResolvedThirdPartyRepository> {
     const config = { mode: 'remote' as const, remoteUrl: repository.url, defaultBranch: repository.branch }
     const source = await this.core.resolveRepositorySource(config, repository.branch, this.cacheRoot(repository.id))
-    const layout = await this.core.detectRepositoryLayout({ root: source.root })
+    const hasConfiguredRoots = repository.skillRoots.length > 0
+    const layout = hasConfiguredRoots
+      ? 'catalog' as const
+      : await this.core.detectRepositoryLayout({ root: source.root })
     const coreAssets = await this.core.scanAssets({
       root: source.root,
       types: ['skills'],
       layout,
       sourceName: repository.name,
+      ...(hasConfiguredRoots ? { skillRoots: repository.skillRoots } : {}),
     })
     const assets = coreAssets.map((asset) => AssetRecordSchema.parse(asset))
     if (assets.length === 0) throw new Error('repository contains no Skills')

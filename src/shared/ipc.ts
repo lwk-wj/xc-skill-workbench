@@ -60,12 +60,39 @@ export const SourceSelectionSchema = z.discriminatedUnion('kind', [
 ])
 export type SourceSelection = z.infer<typeof SourceSelectionSchema>
 
+const skillRootRelativePath = z.string().trim().min(1).max(1000).refine((value) => {
+  if (value.includes('\0') || value.includes('\\')) return false
+  if (value.startsWith('/') || /^[A-Za-z]:\//u.test(value)) return false
+  if (value === '.') return true
+  const parts = value.split('/')
+  return parts.every((part) => part !== '' && part !== '.' && part !== '..')
+}, 'Skill root must be a safe repository-relative path')
+
+export const ThirdPartySkillRootSchema = z.object({
+  relativePath: skillRootRelativePath,
+  group: z.string().trim().max(200).refine((value) =>
+    !value.includes('/') && !value.includes('\\') && !/[\u0000-\u001f\u007f]/u.test(value),
+  'invalid Skill group'),
+}).strict()
+export type ThirdPartySkillRoot = z.infer<typeof ThirdPartySkillRootSchema>
+
+const ThirdPartySkillRootsSchema = z.array(ThirdPartySkillRootSchema).max(50).superRefine((roots, ctx) => {
+  const seen = new Set<string>()
+  roots.forEach((root, index) => {
+    if (seen.has(root.relativePath)) {
+      ctx.addIssue({ code: 'custom', path: [index, 'relativePath'], message: 'duplicate Skill root path' })
+    }
+    seen.add(root.relativePath)
+  })
+})
+
 export const ThirdPartyRepositorySchema = z.object({
   id: safeId,
   name: safeName,
   url: gitRemoteUrl,
   branch: gitBranch,
   layout: z.enum(['catalog', 'single-skill']),
+  skillRoots: ThirdPartySkillRootsSchema.default([]),
   createdAt: z.string().datetime(),
   lastFetchedAt: z.string().datetime().nullable(),
 }).strict()
@@ -75,6 +102,7 @@ export const ThirdPartyRepositoryInputSchema = z.object({
   url: gitRemoteUrl,
   name: z.string().trim().min(1).max(200).optional(),
   branch: gitBranch.optional(),
+  skillRoots: ThirdPartySkillRootsSchema.optional(),
 }).strict()
 export type ThirdPartyRepositoryInput = z.infer<typeof ThirdPartyRepositoryInputSchema>
 

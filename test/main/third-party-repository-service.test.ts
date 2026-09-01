@@ -87,6 +87,23 @@ describe('ThirdPartyRepositoryService', () => {
     await rm(root, { recursive: true, force: true })
   })
 
+  it('uses and persists configured Skill roots instead of automatic layout detection', async () => {
+    const detectRepositoryLayout = vi.fn(async () => 'catalog' as const)
+    const scanAssets = vi.fn(async ({ root: sourceRoot }: { root: string }) => [makeAsset(sourceRoot)])
+    const { root, store, service } = await fixture({ detectRepositoryLayout, scanAssets })
+    const skillRoots = [
+      { relativePath: 'skills/engineering', group: 'engineering' },
+      { relativePath: 'skills/productivity', group: '' },
+    ]
+
+    await expect(service.add({ url: 'https://example.com/configured.git', skillRoots }))
+      .resolves.toMatchObject({ skillRoots, layout: 'catalog', skillCount: 1 })
+    expect(detectRepositoryLayout).not.toHaveBeenCalled()
+    expect(scanAssets).toHaveBeenCalledWith(expect.objectContaining({ skillRoots, layout: 'catalog' }))
+    await expect(store.listThirdPartyRepositories()).resolves.toMatchObject([{ skillRoots }])
+    await rm(root, { recursive: true, force: true })
+  })
+
   it('rejects normalized URL/branch duplicates and keeps an ID stable when editing', async () => {
     let nextId = 0
     const { root, store, core } = await fixture()
@@ -186,6 +203,7 @@ describe('ThirdPartyRepositoryService', () => {
     await writeFile(join(outside, 'keep.txt'), 'keep')
     await store.saveThirdPartyRepository({
       id: 'repo-1', name: 'Unsafe', url: 'https://example.com/unsafe.git', branch: 'main', layout: 'catalog',
+      skillRoots: [],
       createdAt: '2026-09-01T00:00:00.000Z', lastFetchedAt: null,
     })
     await mkdir(join(cacheRoot, 'third-party'), { recursive: true })

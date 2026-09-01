@@ -169,6 +169,7 @@ describe('explorer store', () => {
   it('loads, selects, and refreshes a third-party repository by its stable ID', async () => {
     const repository = {
       id: 'repo-1', name: 'Team Skills', url: 'https://example.com/team.git', branch: 'trunk', layout: 'catalog' as const,
+      skillRoots: [],
       createdAt: '2026-09-01T00:00:00.000Z', lastFetchedAt: '2026-09-01T01:00:00.000Z', skillCount: 1,
       stale: false, cachedAt: '2026-09-01T01:00:00.000Z', lastError: null,
     }

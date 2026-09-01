@@ -10,6 +10,7 @@ const emit = defineEmits<{ saved: [repository: ThirdPartyRepositoryView] }>()
 const url = ref('')
 const name = ref('')
 const branch = ref('')
+const skillRoots = ref<Array<{ relativePath: string; group: string }>>([])
 const saving = ref(false)
 const error = ref<string | null>(null)
 const result = ref<ThirdPartyRepositoryView | null>(null)
@@ -19,6 +20,7 @@ const reset = (): void => {
   url.value = props.repository?.url ?? ''
   name.value = props.repository?.name ?? ''
   branch.value = props.repository?.branch ?? ''
+  skillRoots.value = (props.repository?.skillRoots ?? []).map((root) => ({ ...root }))
   saving.value = false
   error.value = null
   result.value = null
@@ -26,12 +28,28 @@ const reset = (): void => {
 
 watch([visible, () => props.repository], ([nextVisible]) => { if (nextVisible) reset() }, { immediate: true })
 
+const addSkillRoot = (): void => {
+  skillRoots.value.push({ relativePath: '', group: '' })
+}
+
+const removeSkillRoot = (index: number): void => {
+  skillRoots.value.splice(index, 1)
+}
+
 const submit = async (): Promise<void> => {
   if (saving.value || !url.value.trim()) return
+  const configuredRoots = skillRoots.value
+    .map((root) => ({ relativePath: root.relativePath.trim(), group: root.group.trim() }))
+    .filter((root) => root.relativePath || root.group)
+  if (configuredRoots.some((root) => !root.relativePath)) {
+    error.value = '填写分组时也需要填写对应的 Skill 相对路径。'
+    return
+  }
   const input: ThirdPartyRepositoryInput = {
     url: url.value.trim(),
     ...(name.value.trim() ? { name: name.value.trim() } : {}),
     ...(branch.value.trim() ? { branch: branch.value.trim() } : {}),
+    ...(configuredRoots.length ? { skillRoots: configuredRoots } : {}),
   }
   saving.value = true
   error.value = null
@@ -57,7 +75,7 @@ const close = (): void => { visible.value = false }
     class="third-party-repository-dialog"
     :title="editing ? '编辑第三方仓库' : '添加第三方仓库'"
     :aria-label="editing ? '编辑第三方仓库' : '添加第三方仓库'"
-    width="min(560px, calc(100vw - 48px))"
+    width="min(680px, calc(100vw - 48px))"
     append-to-body
     :close-on-click-modal="false"
   >
@@ -87,6 +105,46 @@ const close = (): void => { visible.value = false }
       <label>分支 <span>可选</span>
         <ElInput v-model="branch" aria-label="分支" placeholder="留空时自动识别默认分支" autocomplete="off" />
       </label>
+
+      <section class="repository-skill-roots" aria-labelledby="skill-roots-title">
+        <div class="repository-skill-roots-header">
+          <div>
+            <strong id="skill-roots-title">Skill 目录</strong>
+            <p>可选；未配置时使用默认目录识别。每个路径只读取直接子目录。</p>
+          </div>
+          <ElButton plain size="small" @click="addSkillRoot">添加 Skill 目录</ElButton>
+        </div>
+
+        <div v-if="skillRoots.length" class="repository-skill-root-list">
+          <div v-for="(root, index) in skillRoots" :key="index" class="repository-skill-root-row">
+            <div class="repository-skill-root-field">
+              <span>仓库相对路径</span>
+              <ElInput
+                v-model="root.relativePath"
+                :aria-label="`Skill 相对路径 ${index + 1}`"
+                placeholder="例如 skills/engineering"
+                autocomplete="off"
+              />
+            </div>
+            <div class="repository-skill-root-field">
+              <span>分组（可选）</span>
+              <ElInput
+                v-model="root.group"
+                :aria-label="`分组名称 ${index + 1}`"
+                placeholder="例如 engineering"
+                autocomplete="off"
+              />
+            </div>
+            <ElButton
+              class="repository-skill-root-remove"
+              text
+              :aria-label="`删除 Skill 目录 ${index + 1}`"
+              @click="removeSkillRoot(index)"
+            >×</ElButton>
+          </div>
+        </div>
+        <div v-else class="repository-skill-roots-empty">未指定目录，将自动识别仓库结构。</div>
+      </section>
     </form>
 
     <template #footer>

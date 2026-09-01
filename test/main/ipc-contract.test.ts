@@ -74,11 +74,35 @@ describe('IPC contracts', () => {
       url: ' https://example.com/team/skills.git ',
       name: ' Team Skills ',
       branch: ' trunk ',
-    })).toEqual({ url: 'https://example.com/team/skills.git', name: 'Team Skills', branch: 'trunk' })
+      skillRoots: [
+        { relativePath: ' skills/engineering ', group: ' engineering ' },
+        { relativePath: 'skills/productivity', group: '' },
+      ],
+    })).toEqual({
+      url: 'https://example.com/team/skills.git',
+      name: 'Team Skills',
+      branch: 'trunk',
+      skillRoots: [
+        { relativePath: 'skills/engineering', group: 'engineering' },
+        { relativePath: 'skills/productivity', group: '' },
+      ],
+    })
+    expect(() => ThirdPartyRepositoryInputSchema.parse({
+      url: 'https://example.com/skills.git',
+      skillRoots: [{ relativePath: '../outside', group: '' }],
+    })).toThrow()
+    expect(() => ThirdPartyRepositoryInputSchema.parse({
+      url: 'https://example.com/skills.git',
+      skillRoots: [
+        { relativePath: 'skills/backend', group: 'one' },
+        { relativePath: 'skills/backend', group: 'two' },
+      ],
+    })).toThrow()
     expect(() => ThirdPartyRepositoryInputSchema.parse({ url: 'https://example.com/skills.git', cacheRoot: '/tmp/forged' })).toThrow()
     expect(SourceSelectionSchema.parse({ kind: 'third-party', repositoryId: 'repo-1' })).toEqual({ kind: 'third-party', repositoryId: 'repo-1' })
     expect(ThirdPartyRepositoryViewSchema.parse({
       id: 'repo-1', name: 'Team Skills', url: 'https://example.com/skills.git', branch: 'trunk', layout: 'catalog',
+      skillRoots: [],
       createdAt: '2026-09-01T00:00:00.000Z', lastFetchedAt: null,
       skillCount: 2, stale: false, cachedAt: null, lastError: null,
     })).not.toHaveProperty('cacheRoot')
@@ -156,6 +180,7 @@ describe('IPC contracts', () => {
     const handlers = new Map<string, (event: unknown, input?: unknown) => unknown>()
     const repository = {
       id: 'repo-1', name: 'Team Skills', url: 'https://example.com/team/skills.git', branch: 'main', layout: 'catalog' as const,
+      skillRoots: [],
       createdAt: '2026-09-01T00:00:00.000Z', lastFetchedAt: '2026-09-01T01:00:00.000Z',
       skillCount: 2, stale: false, cachedAt: '2026-09-01T01:00:00.000Z', lastError: null,
     }
