@@ -5,10 +5,12 @@ import {
   OperationRequestSchema, OperationResultSchema, OperationPlanSchema, OperationProgressSchema, RepositoryBranchSchema, RepositoryViewSchema,
   RepositoryConfigInputSchema, RepositoryConfigUpdateResultSchema, SourceSelectionSchema, ThemePreferenceSchema,
   ThirdPartyRepositoryInputSchema, ThirdPartyRepositoryViewSchema,
+  RelinkInstallationInputSchema,
   XcSkillsConfigSchema, type AgentDefinition, type AssetDetail, type AssetRecord,
   type DesktopApi, type OperationPlan, type OperationProgress, type OperationRequest, type OperationResult, type RepositoryBranch,
   type RepositoryConfigInput, type RepositoryConfigUpdateResult, type RepositoryView, type SourceSelection, type XcSkillsConfig,
   type ThirdPartyRepositoryInput, type ThirdPartyRepositoryView,
+  type RelinkInstallationInput,
 } from '../../shared/ipc.js'
 import type { AppStore } from '../services/app-store.js'
 import type { CoreService } from '../services/core-service.js'
@@ -40,6 +42,7 @@ export interface IpcServices {
   updateThirdPartyRepository?: (id: string, input: ThirdPartyRepositoryInput) => Promise<ThirdPartyRepositoryView>
   removeThirdPartyRepository?: (id: string) => Promise<void>
   refreshThirdPartyRepository?: (id: string) => Promise<ThirdPartyRepositoryView>
+  relinkInstallation?: (input: RelinkInstallationInput) => Promise<void>
   scan?: (source: SourceSelection) => Promise<AssetRecord[]>
   detail?: (selection: { source: SourceSelection; assetId: string }) => Promise<AssetDetail>
   statuses?: (selection: { source: SourceSelection; assetId: string }) => Promise<unknown[]>
@@ -74,6 +77,7 @@ export const registerIpc = ({ ipcMain, appStore, services: suppliedServices = {}
     listAgents: () => coreService.listAgents(), setAgentEnabled: (id, enabled) => coreService.setAgentEnabled(id, enabled), saveCustomAgent: (agent) => coreService.saveCustomAgent(agent), removeCustomAgent: (id) => coreService.removeCustomAgent(id),
     getConfig: () => coreService.getConfig(), currentRepository: () => coreService.currentRepository(), updateConfig: (input) => coreService.updateConfig(input), listBranches: () => coreService.listBranches(), selectBranch: (branch) => coreService.selectBranch(branch), setDefaultBranch: (branch) => coreService.setDefaultBranch(branch), refresh: () => coreService.refresh(),
     listThirdPartyRepositories: () => coreService.listThirdPartyRepositories(), addThirdPartyRepository: (input) => coreService.addThirdPartyRepository(input), updateThirdPartyRepository: (id, input) => coreService.updateThirdPartyRepository(id, input), removeThirdPartyRepository: (id) => coreService.removeThirdPartyRepository(id), refreshThirdPartyRepository: (id) => coreService.refreshThirdPartyRepository(id),
+    relinkInstallation: (input) => coreService.relinkInstallation(input),
     scan: (source) => coreService.scan(source), detail: (selection) => coreService.detail(selection), statuses: (selection) => coreService.statuses(selection),
     plan: (request) => coreService.plan(request), execute: (planId, options) => coreService.execute(planId, options), cancel: (planId, options) => coreService.cancel(planId, options), rescan: (paths) => coreService.rescanAffected(paths),
   } : {}
@@ -161,6 +165,10 @@ export const registerIpc = ({ ipcMain, appStore, services: suppliedServices = {}
   invoke(Channels.thirdPartyRepositoriesRefresh, repositoryIdSchema, async (id) => ThirdPartyRepositoryViewSchema.parse(
     services.refreshThirdPartyRepository ? await services.refreshThirdPartyRepository(id) : unsupported('thirdPartyRepositories.refresh'),
   ))
+  invoke(Channels.thirdPartyRepositoriesRelinkInstallation, RelinkInstallationInputSchema, async (input) => {
+    if (!services.relinkInstallation) return unsupported('thirdPartyRepositories.relinkInstallation')
+    await services.relinkInstallation(input)
+  })
 
   invoke(Channels.assetsScan, SourceSelectionSchema, (source) => services.scan ? services.scan(source) : unsupported('assets.scan'))
   invoke(Channels.assetsDetail, AssetSelectionSchema, (selection) => services.detail ? services.detail(selection) : unsupported('assets.detail'))

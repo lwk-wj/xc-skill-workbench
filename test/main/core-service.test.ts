@@ -441,4 +441,107 @@ describe('CoreService', () => {
     expect(location?.status).toMatchObject({ status: 'unknown', reason: '中央仓库存在多个同名资产，无法确定来源分组' })
     await rm(root, { recursive: true, force: true })
   })
+
+  it('keeps same-named third-party assets isolated and reads details from Core provenance', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-third-party-detail-'))
+    const store = new AppStore(join(root, 'state.json'))
+    const timestamp = '2026-09-01T00:00:00.000Z'
+    for (const id of ['repo-1', 'repo-2']) {
+      await store.saveThirdPartyRepository({ id, name: id, url: `https://example.com/${id}.git`, branch: 'main', layout: 'catalog', createdAt: timestamp, lastFetchedAt: timestamp })
+    }
+    const rawAssets = new Map(['repo-1', 'repo-2'].map((id) => [id, {
+      id: 'same-asset-id', type: 'skills' as const, name: 'shared-skill', group: 'common',
+      path: join(root, id, 'shared-skill'), entryPath: join(root, id, 'shared-skill', 'SKILL.md'),
+      entryState: 'active' as const, description: id, version: null,
+    }]))
+    const thirdPartyRepositories = {
+      resolve: vi.fn(async (id: string) => {
+        const asset = rawAssets.get(id)!
+        const repository = (await store.listThirdPartyRepositories()).find((entry) => entry.id === id)!
+        return { repository, root: join(root, id), branch: 'main', commit: 'a'.repeat(40), layout: 'catalog' as const, stale: false, cachedAt: timestamp, lastError: null, assets: [asset], coreAssets: [asset] }
+      }),
+    }
+    const readAssetDetail = vi.fn(async (asset: { path: string }) => ({ ...asset, markdown: `# ${asset.path}`, evolution: null, files: [] }))
+    const service = new CoreService({
+      appStore: store,
+      thirdPartyRepositories: thirdPartyRepositories as never,
+      core: { readAssetDetail: readAssetDetail as never },
+    })
+
+    const [first] = await service.scan({ kind: 'third-party', repositoryId: 'repo-1' })
+    const [second] = await service.scan({ kind: 'third-party', repositoryId: 'repo-2' })
+    const firstDetail = await service.detail({ source: { kind: 'third-party', repositoryId: 'repo-1' }, assetId: first!.id })
+    const secondDetail = await service.detail({ source: { kind: 'third-party', repositoryId: 'repo-2' }, assetId: second!.id })
+
+    expect(first?.description).toBe('repo-1')
+    expect(second?.description).toBe('repo-2')
+    expect(firstDetail.markdown).toContain('/repo-1/')
+    expect(secondDetail.markdown).toContain('/repo-2/')
+    expect(readAssetDetail).toHaveBeenNthCalledWith(1, rawAssets.get('repo-1'))
+    expect(readAssetDetail).toHaveBeenNthCalledWith(2, rawAssets.get('repo-2'))
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it('reports source_unavailable when an installed Skill points to a removed repository', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-third-party-missing-'))
+    const globalSkills = join(root, 'global', 'skills')
+    const installedPath = join(globalSkills, 'shared-skill')
+    await mkdir(installedPath, { recursive: true })
+    const store = new AppStore(join(root, 'state.json'))
+    const installed = {
+      id: 'installed-skill', type: 'skills' as const, name: 'shared-skill', group: 'common', path: installedPath,
+      entryPath: join(installedPath, 'SKILL.md'), entryState: 'active' as const, description: 'Installed', version: null,
+    }
+    await store.upsertInstallationSource({
+      id: 'install-1', scope: 'global', projectId: null, agentId: 'codex', targetPath: installedPath,
+      asset: { type: 'skills', group: 'common', name: 'shared-skill' },
+      source: { kind: 'third-party', repositoryId: 'removed-repo', repositoryName: 'Removed', repositoryUrl: 'https://example.com/removed.git' },
+      installedCommit: 'a'.repeat(40), installedHash: 'installed-hash',
+    })
+    const agent = { id: 'codex', name: 'Codex', projectBaseDir: '.codex', globalBaseDir: join(root, 'global'), assetDirs: { skills: 'skills', rules: 'rules', workflows: 'workflows' }, builtIn: true, enabled: true }
+    const service = new CoreService({
+      appStore: store,
+      thirdPartyRepositories: { resolve: async () => { throw new Error('unknown third-party repository id') } } as never,
+      core: {
+        BUILTIN_AGENTS: [agent],
+        resolveAgentAssetRoot: (_agent, _scope, _base, type) => join(root, 'global', type),
+        scanAssets: async ({ root: scanRoot }) => scanRoot === globalSkills ? [installed] : [],
+      },
+    })
+
+    const [asset] = await service.scan({ kind: 'global' })
+    const [location] = await service.statuses({ source: { kind: 'global' }, assetId: asset!.id })
+
+    expect(location?.status).toMatchObject({ status: 'source_unavailable', reason: '来源仓库不可用' })
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it('relinks an installation only when its content matches the selected third-party source', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-third-party-relink-'))
+    const targetPath = join(root, 'installed', 'demo')
+    await mkdir(targetPath, { recursive: true })
+    const store = new AppStore(join(root, 'state.json'))
+    const repository = { id: 'repo-1', name: 'Team Skills', url: 'https://example.com/team.git', branch: 'main', layout: 'catalog' as const, createdAt: '2026-09-01T00:00:00.000Z', lastFetchedAt: '2026-09-01T01:00:00.000Z' }
+    await store.saveThirdPartyRepository(repository)
+    await store.upsertInstallationSource({
+      id: 'install-1', scope: 'global', projectId: null, agentId: 'codex', targetPath,
+      asset: { type: 'skills', group: '', name: 'demo' },
+      source: { kind: 'central', repositoryId: null, repositoryName: 'Central', repositoryUrl: null },
+      installedCommit: null, installedHash: 'same-hash',
+    })
+    const rawAsset = { id: 'asset-1', type: 'skills' as const, name: 'demo', group: '', path: join(root, 'source', 'demo'), entryPath: join(root, 'source', 'demo', 'SKILL.md'), entryState: 'active' as const, description: 'Demo', version: null }
+    const thirdPartyRepositories = { resolve: async () => ({ repository, root: join(root, 'source'), branch: 'main', commit: 'b'.repeat(40), layout: 'catalog' as const, stale: false, cachedAt: repository.lastFetchedAt, lastError: null, assets: [rawAsset], coreAssets: [rawAsset] }) }
+    const evaluateAssetStatus = vi.fn(async () => ({ status: 'current' as const, updateAvailable: false, locallyModified: false, sourceHash: 'same-hash', installedHash: 'same-hash', sourceVersion: null, installedVersion: null, resolvedTarget: targetPath, reason: 'current' }))
+    const service = new CoreService({ appStore: store, thirdPartyRepositories: thirdPartyRepositories as never, core: { evaluateAssetStatus } })
+
+    await expect(service.relinkInstallation({ installationId: 'missing', repositoryId: 'repo-1', assetId: 'asset-1' })).rejects.toThrow(/unknown installation/i)
+    await service.relinkInstallation({ installationId: 'install-1', repositoryId: 'repo-1', assetId: 'asset-1' })
+    await expect(store.listInstallationSources()).resolves.toMatchObject([{
+      id: 'install-1',
+      source: { kind: 'third-party', repositoryId: 'repo-1', repositoryName: 'Team Skills' },
+      installedCommit: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    }])
+    expect(evaluateAssetStatus).toHaveBeenCalledWith(rawAsset, await realpath(targetPath))
+    await rm(root, { recursive: true, force: true })
+  })
 })

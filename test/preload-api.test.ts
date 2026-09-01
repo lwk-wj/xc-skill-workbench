@@ -76,6 +76,7 @@ describe('preload repository API', () => {
     await api.thirdPartyRepositories.add(input)
     await api.thirdPartyRepositories.update('repo-1', input)
     await api.thirdPartyRepositories.refresh('repo-1')
+    await api.thirdPartyRepositories.relinkInstallation({ installationId: 'install-1', repositoryId: 'repo-1', assetId: 'asset-1' })
     await api.thirdPartyRepositories.remove('repo-1')
 
     expect(electron.invoke.mock.calls).toEqual([
@@ -83,6 +84,7 @@ describe('preload repository API', () => {
       [Channels.thirdPartyRepositoriesAdd, input],
       [Channels.thirdPartyRepositoriesUpdate, { id: 'repo-1', input }],
       [Channels.thirdPartyRepositoriesRefresh, 'repo-1'],
+      [Channels.thirdPartyRepositoriesRelinkInstallation, { installationId: 'install-1', repositoryId: 'repo-1', assetId: 'asset-1' }],
       [Channels.thirdPartyRepositoriesRemove, 'repo-1'],
     ])
   })

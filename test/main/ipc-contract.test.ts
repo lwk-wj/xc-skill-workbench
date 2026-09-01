@@ -136,6 +136,7 @@ describe('IPC contracts', () => {
     const updateThirdPartyRepository = vi.fn(async () => repository)
     const removeThirdPartyRepository = vi.fn(async () => undefined)
     const refreshThirdPartyRepository = vi.fn(async () => repository)
+    const relinkInstallation = vi.fn(async () => undefined)
     registerIpc({
       ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
       appStore: new AppStore(join(root, 'state.json')),
@@ -145,6 +146,7 @@ describe('IPC contracts', () => {
         updateThirdPartyRepository,
         removeThirdPartyRepository,
         refreshThirdPartyRepository,
+        relinkInstallation,
       },
     })
 
@@ -152,9 +154,11 @@ describe('IPC contracts', () => {
     await expect(handlers.get(Channels.thirdPartyRepositoriesAdd)?.({}, { url: ` ${repository.url} ` })).resolves.toEqual(repository)
     await expect(handlers.get(Channels.thirdPartyRepositoriesUpdate)?.({}, { id: 'repo-1', input: { url: repository.url, branch: 'main' } })).resolves.toEqual(repository)
     await expect(handlers.get(Channels.thirdPartyRepositoriesRefresh)?.({}, 'repo-1')).resolves.toEqual(repository)
+    await expect(handlers.get(Channels.thirdPartyRepositoriesRelinkInstallation)?.({}, { installationId: 'install-1', repositoryId: 'repo-1', assetId: 'asset-1' })).resolves.toBeUndefined()
     await expect(handlers.get(Channels.thirdPartyRepositoriesRemove)?.({}, 'repo-1')).resolves.toBeUndefined()
     expect(addThirdPartyRepository).toHaveBeenCalledWith({ url: repository.url })
     expect(updateThirdPartyRepository).toHaveBeenCalledWith('repo-1', { url: repository.url, branch: 'main' })
+    expect(relinkInstallation).toHaveBeenCalledWith({ installationId: 'install-1', repositoryId: 'repo-1', assetId: 'asset-1' })
   })
 
   it('rejects unsafe third-party inputs before service handlers run', async () => {
@@ -162,10 +166,11 @@ describe('IPC contracts', () => {
     const handlers = new Map<string, (event: unknown, input?: unknown) => unknown>()
     const addThirdPartyRepository = vi.fn()
     const updateThirdPartyRepository = vi.fn()
+    const relinkInstallation = vi.fn()
     registerIpc({
       ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
       appStore: new AppStore(join(root, 'state.json')),
-      services: { addThirdPartyRepository, updateThirdPartyRepository },
+      services: { addThirdPartyRepository, updateThirdPartyRepository, relinkInstallation },
     })
 
     for (const input of [
@@ -179,8 +184,12 @@ describe('IPC contracts', () => {
     await expect(handlers.get(Channels.thirdPartyRepositoriesUpdate)?.({}, {
       id: '', input: { url: 'https://example.com/skill.git' },
     })).rejects.toThrow()
+    await expect(handlers.get(Channels.thirdPartyRepositoriesRelinkInstallation)?.({}, {
+      installationId: 'install-1', repositoryId: 'repo-1', assetId: 'asset-1', targetPath: '/tmp/forged',
+    })).rejects.toThrow()
     expect(addThirdPartyRepository).not.toHaveBeenCalled()
     expect(updateThirdPartyRepository).not.toHaveBeenCalled()
+    expect(relinkInstallation).not.toHaveBeenCalled()
   })
 
   it('returns the current repository capabilities through a read-only channel', async () => {

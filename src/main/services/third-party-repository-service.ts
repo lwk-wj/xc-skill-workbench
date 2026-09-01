@@ -52,6 +52,7 @@ export type ResolvedThirdPartyRepository = {
   cachedAt: string | null
   lastError: string | null
   assets: AssetRecord[]
+  coreAssets: unknown[]
 }
 
 type LogLike = { write(level: string, message: string, context?: unknown): Promise<void> }
@@ -139,12 +140,13 @@ export class ThirdPartyRepositoryService {
     const config = { mode: 'remote' as const, remoteUrl: repository.url, defaultBranch: repository.branch }
     const source = await this.core.resolveRepositorySource(config, repository.branch, this.cacheRoot(repository.id))
     const layout = await this.core.detectRepositoryLayout({ root: source.root })
-    const assets = (await this.core.scanAssets({
+    const coreAssets = await this.core.scanAssets({
       root: source.root,
       types: ['skills'],
       layout,
       sourceName: repository.name,
-    })).map((asset) => AssetRecordSchema.parse(asset))
+    })
+    const assets = coreAssets.map((asset) => AssetRecordSchema.parse(asset))
     if (assets.length === 0) throw new Error('repository contains no Skills')
     return {
       repository,
@@ -156,6 +158,7 @@ export class ThirdPartyRepositoryService {
       cachedAt: source.cachedAt,
       lastError: null,
       assets,
+      coreAssets,
     }
   }
 

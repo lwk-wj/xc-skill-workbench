@@ -31,6 +31,7 @@ const api: DesktopApi = {
     update: (id, input) => invoke(Channels.thirdPartyRepositoriesUpdate, { id, input }),
     remove: (id) => invoke(Channels.thirdPartyRepositoriesRemove, id),
     refresh: (id) => invoke(Channels.thirdPartyRepositoriesRefresh, id),
+    relinkInstallation: (input) => invoke(Channels.thirdPartyRepositoriesRelinkInstallation, input),
   },
   assets: {
     scan: (source) => invoke(Channels.assetsScan, source),

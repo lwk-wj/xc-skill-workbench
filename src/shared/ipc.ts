@@ -86,6 +86,13 @@ export const ThirdPartyRepositoryViewSchema = ThirdPartyRepositorySchema.extend(
 }).strict()
 export type ThirdPartyRepositoryView = z.infer<typeof ThirdPartyRepositoryViewSchema>
 
+export const RelinkInstallationInputSchema = z.object({
+  installationId: safeId,
+  repositoryId: safeId,
+  assetId: safeId,
+}).strict()
+export type RelinkInstallationInput = z.infer<typeof RelinkInstallationInputSchema>
+
 const InstallationSourceSnapshotSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('central'),
@@ -276,6 +283,7 @@ export interface DesktopApi {
     update(id: string, input: ThirdPartyRepositoryInput): Promise<ThirdPartyRepositoryView>
     remove(id: string): Promise<void>
     refresh(id: string): Promise<ThirdPartyRepositoryView>
+    relinkInstallation(input: RelinkInstallationInput): Promise<void>
   }
   assets: { scan(source: SourceSelection): Promise<AssetRecord[]>; detail(asset: AssetSelection): Promise<AssetDetail>; statuses(asset: AssetSelection): Promise<Array<{ projectId: string | null; agentId: string; path: string; method: InstallMethod | null; status: AssetStatusRecord }>> }
   operations: { plan(input: OperationRequest): Promise<OperationPlan>; execute(planId: string): Promise<OperationResult>; cancel(planId: string): Promise<void>; onProgress(listener: (progress: OperationProgress) => void): () => void }
@@ -288,6 +296,7 @@ export const Channels = {
   agentsList: 'agents:list', agentsSetEnabled: 'agents:setEnabled', agentsSaveCustom: 'agents:saveCustom', agentsRemoveCustom: 'agents:removeCustom',
   repositoriesGetConfig: 'repositories:getConfig', repositoriesCurrent: 'repositories:current', repositoriesChooseLocalPath: 'repositories:chooseLocalPath', repositoriesUpdateConfig: 'repositories:updateConfig', repositoriesListBranches: 'repositories:listBranches', repositoriesSelectBranch: 'repositories:selectBranch', repositoriesSetDefaultBranch: 'repositories:setDefaultBranch', repositoriesRefresh: 'repositories:refresh',
   thirdPartyRepositoriesList: 'third-party-repositories:list', thirdPartyRepositoriesAdd: 'third-party-repositories:add', thirdPartyRepositoriesUpdate: 'third-party-repositories:update', thirdPartyRepositoriesRemove: 'third-party-repositories:remove', thirdPartyRepositoriesRefresh: 'third-party-repositories:refresh',
+  thirdPartyRepositoriesRelinkInstallation: 'third-party-repositories:relinkInstallation',
   assetsScan: 'assets:scan', assetsDetail: 'assets:detail', assetsStatuses: 'assets:statuses',
   operationsPlan: 'operations:plan', operationsExecute: 'operations:execute', operationsCancel: 'operations:cancel', operationsProgress: 'operations:progress',
   preferencesGetTheme: 'preferences:getTheme', preferencesSetTheme: 'preferences:setTheme', preferencesGetLastSource: 'preferences:getLastSource', systemOpenExternal: 'system:openExternal',

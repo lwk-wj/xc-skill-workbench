@@ -22,9 +22,9 @@ import {
 } from 'xc-skills/core'
 import type {
   AgentDefinition, AssetDetail, AssetRecord, AssetSelection, AssetStatusRecord as DesktopStatus,
-  DesktopState, OperationPlan, OperationRequest, OperationResult, ProjectRecord, RepositoryBranch,
+  DesktopState, InstallationSourceRecord, OperationPlan, OperationRequest, OperationResult, ProjectRecord, RepositoryBranch,
   RepositoryConfigInput, RepositoryConfigUpdateResult, RepositoryView, SourceSelection,
-  ThirdPartyRepositoryInput, ThirdPartyRepositoryView,
+  ThirdPartyRepositoryInput, ThirdPartyRepositoryView, RelinkInstallationInput,
 } from '../../shared/ipc.js'
 import {
   AssetRecordSchema, AssetDetailSchema, AssetStatusRecordSchema, XcSkillsConfigSchema,
@@ -49,6 +49,10 @@ const asDesktopAsset = (asset: unknown): AssetRecord => AssetRecordSchema.parse(
 const keyFor = (source: SourceSelection, id: string) => `${JSON.stringify(source)}:${id}`
 const unknownStatus = (reason: string): DesktopStatus => AssetStatusRecordSchema.parse({
   status: 'unknown', updateAvailable: false, locallyModified: false, sourceHash: null, installedHash: null,
+  sourceVersion: null, installedVersion: null, resolvedTarget: null, reason,
+})
+const sourceUnavailableStatus = (reason = '来源仓库不可用'): DesktopStatus => AssetStatusRecordSchema.parse({
+  status: 'source_unavailable', updateAvailable: false, locallyModified: false, sourceHash: null, installedHash: null,
   sourceVersion: null, installedVersion: null, resolvedTarget: null, reason,
 })
 
@@ -258,6 +262,7 @@ export class CoreService {
     await this.appStore.setLastSource(source)
     this.catalog.forEach((_value, key) => { if (key.startsWith(`${JSON.stringify(source)}:`)) this.catalog.delete(key) })
     this.coreCatalog.forEach((_value, key) => { if (key.startsWith(`${JSON.stringify(source)}:`)) this.coreCatalog.delete(key) })
+    this.metadata.forEach((_value, key) => { if (key.startsWith(`${JSON.stringify(source)}:`)) this.metadata.delete(key) })
     this.locations.forEach((_value, key) => { if (key.startsWith(`${JSON.stringify(source)}:`)) this.locations.delete(key) })
     const result: AssetRecord[] = []
     if (source.kind === 'central') {
@@ -266,8 +271,16 @@ export class CoreService {
       return result
     }
     if (source.kind === 'third-party') {
-      if (!this.thirdPartyRepositories) throw new Error('third-party repository service is not available')
-      throw new Error('third-party repository source integration is not available')
+      const repository = await this.requireThirdPartyRepositories().resolve(source.repositoryId)
+      for (let index = 0; index < repository.assets.length; index += 1) {
+        const asset = repository.assets[index]!
+        const key = keyFor(source, asset.id)
+        this.catalog.set(key, asset)
+        this.coreCatalog.set(key, (repository.coreAssets[index] ?? asset) as CoreAsset)
+        this.metadata.set(key, { source, projectId: null, agentId: null, method: null })
+        result.push(asset)
+      }
+      return result
     }
     const state = await this.appStore.read()
     const project = source.kind === 'project' ? state.projects.find((entry) => entry.id === source.projectId) : null
@@ -317,61 +330,121 @@ export class CoreService {
     const coreAsset = this.coreCatalog.get(keyFor(selection.source, selection.assetId)) ?? asset as unknown as CoreAsset
     return AssetDetailSchema.parse(await this.core.readAssetDetail(coreAsset))
   }
-  async statuses(selection: AssetSelection): Promise<Array<{ projectId: string | null; agentId: string; path: string; method: 'copy' | 'symlink' | null; status: DesktopStatus }>> {
-    const installed = await this.getCatalogAsset(selection)
-    const meta = this.metadata.get(keyFor(selection.source, selection.assetId))
-    const scannedLocations = (this.locations.get(keyFor(selection.source, selection.assetId)) ?? []).filter(({ meta: locationMeta }) => selection.source.kind !== 'project' || locationMeta.projectId === selection.source.projectId)
-    let central: AssetRecord | null = null
-    let missingReason = '中央分支不存在同名资产'
-    try {
-      const match = this.findCentralAsset(installed, await this.scan({ kind: 'central' }))
-      central = match.asset
-      missingReason = match.reason
-    } catch { /* report unknown below */ }
-    if (!central) {
-      const locations = scannedLocations.length > 0 ? scannedLocations.map(({ asset: location, meta: locationMeta }) => ({ projectId: locationMeta.projectId, agentId: locationMeta.agentId ?? '', path: location.path })) : [{ projectId: meta?.projectId ?? null, agentId: meta?.agentId ?? '', path: installed.path }]
-      return Promise.all(locations.map(async (location) => ({ ...location, method: await this.installMethod(location.path), status: unknownStatus(missingReason) })))
+  private async resolveRecordedSource(record: InstallationSourceRecord): Promise<{ asset: AssetRecord; coreAsset: CoreAsset }> {
+    if (record.source.kind === 'third-party') {
+      const repository = await this.requireThirdPartyRepositories().resolve(record.source.repositoryId)
+      const index = repository.assets.findIndex((asset) =>
+        asset.type === record.asset.type && asset.group === record.asset.group && asset.name === record.asset.name)
+      if (index < 0) throw new Error('recorded Skill no longer exists in its repository')
+      return { asset: repository.assets[index]!, coreAsset: (repository.coreAssets[index] ?? repository.assets[index]) as CoreAsset }
     }
+    const centralAssets = await this.scan({ kind: 'central' })
+    const asset = centralAssets.find((candidate) =>
+      candidate.type === record.asset.type && candidate.group === record.asset.group && candidate.name === record.asset.name)
+    if (!asset) throw new Error('recorded Skill no longer exists in the central repository')
+    return { asset, coreAsset: this.coreCatalog.get(keyFor({ kind: 'central' }, asset.id)) ?? asset as unknown as CoreAsset }
+  }
 
-    const centralCoreAsset = this.coreCatalog.get(keyFor({ kind: 'central' }, central.id)) ?? central as unknown as CoreAsset
-    const evaluate = async (location: { projectId: string | null; agentId: string; path: string }): Promise<{ projectId: string | null; agentId: string; path: string; method: 'copy' | 'symlink' | null; status: DesktopStatus }> => {
-      const method = await this.installMethod(location.path)
-      try { return { ...location, method, status: AssetStatusRecordSchema.parse(await this.core.evaluateAssetStatus(centralCoreAsset, location.path)) } }
-      catch { return { ...location, method, status: unknownStatus('无法计算资产状态') } }
-    }
-    if (selection.source.kind !== 'central') {
-      const locations = scannedLocations.length > 0 ? scannedLocations.map(({ asset: location, meta: locationMeta }) => ({ projectId: locationMeta.projectId, agentId: locationMeta.agentId ?? '', path: location.path })) : [{ projectId: meta?.projectId ?? null, agentId: meta?.agentId ?? '', path: installed.path }]
-      const results: Array<{ projectId: string | null; agentId: string; path: string; method: 'copy' | 'symlink' | null; status: DesktopStatus }> = []
-      let cursor = 0
-      const worker = async () => { while (true) { const index = cursor++; if (index >= locations.length) return; results[index] = await evaluate(locations[index]!) } }
-      await Promise.all(Array.from({ length: Math.min(8, locations.length) }, worker))
-      return results
-    }
-
+  private async catalogTargetLocations(asset: AssetRecord): Promise<Array<{ projectId: string | null; agentId: string; path: string }>> {
     const state = await this.appStore.read()
     const locations: Array<{ projectId: string | null; agentId: string; path: string }> = []
     for (const agent of (await this.listAgents()).filter((entry) => entry.enabled)) {
-      for (const type of [central.type] as const) {
-        let globalRoot: string
-        try { globalRoot = this.core.resolveAgentAssetRoot(agent as unknown as CoreAgent, 'global', homedir(), type) } catch {
-          const base = resolve(agent.globalBaseDir); globalRoot = resolve(base, agent.assetDirs[type])
+      let globalRoot: string
+      try { globalRoot = this.core.resolveAgentAssetRoot(agent as unknown as CoreAgent, 'global', homedir(), asset.type) } catch {
+        globalRoot = resolve(agent.globalBaseDir, agent.assetDirs[asset.type])
+      }
+      locations.push({ projectId: null, agentId: agent.id, path: join(globalRoot, asset.name) })
+      for (const project of state.projects) {
+        let projectRoot: string
+        try { projectRoot = this.core.resolveAgentAssetRoot(agent as unknown as CoreAgent, 'project', project.path, asset.type) } catch {
+          const base = agent.projectBaseDir.startsWith('/') ? agent.projectBaseDir : resolve(project.path, agent.projectBaseDir)
+          projectRoot = resolve(base, agent.assetDirs[asset.type])
         }
-        locations.push({ projectId: null, agentId: agent.id, path: join(globalRoot, central.name) })
-        for (const project of state.projects) {
-          let projectRoot: string
-          try { projectRoot = this.core.resolveAgentAssetRoot(agent as unknown as CoreAgent, 'project', project.path, type) } catch {
-            const base = agent.projectBaseDir.startsWith('/') ? agent.projectBaseDir : resolve(project.path, agent.projectBaseDir)
-            projectRoot = resolve(base, agent.assetDirs[type])
-          }
-          locations.push({ projectId: project.id, agentId: agent.id, path: join(projectRoot, central.name) })
-        }
+        locations.push({ projectId: project.id, agentId: agent.id, path: join(projectRoot, asset.name) })
       }
     }
-    const results: Array<{ projectId: string | null; agentId: string; path: string; method: 'copy' | 'symlink' | null; status: DesktopStatus }> = []
-    let cursor = 0
-    const worker = async () => { while (true) { const index = cursor++; if (index >= locations.length) return; results[index] = await evaluate(locations[index]!) } }
-    await Promise.all(Array.from({ length: Math.min(8, locations.length) }, worker))
+    return locations
+  }
+
+  async statuses(selection: AssetSelection): Promise<Array<{ projectId: string | null; agentId: string; path: string; method: 'copy' | 'symlink' | null; status: DesktopStatus }>> {
+    const selected = await this.getCatalogAsset(selection)
+    const key = keyFor(selection.source, selection.assetId)
+    const meta = this.metadata.get(key)
+    const evaluate = async (coreAsset: CoreAsset, location: { projectId: string | null; agentId: string; path: string }) => {
+      const method = await this.installMethod(location.path)
+      try { return { ...location, method, status: AssetStatusRecordSchema.parse(await this.core.evaluateAssetStatus(coreAsset, location.path)) } }
+      catch { return { ...location, method, status: unknownStatus('无法计算资产状态') } }
+    }
+
+    if (selection.source.kind === 'central' || selection.source.kind === 'third-party') {
+      const coreAsset = this.coreCatalog.get(key) ?? selected as unknown as CoreAsset
+      const locations = await this.catalogTargetLocations(selected)
+      return await Promise.all(locations.map((location) => evaluate(coreAsset, location)))
+    }
+
+    const scannedLocations = (this.locations.get(key) ?? [])
+      .filter(({ meta: locationMeta }) => selection.source.kind !== 'project' || locationMeta.projectId === selection.source.projectId)
+    const locations = scannedLocations.length > 0
+      ? scannedLocations.map(({ asset, meta: locationMeta }) => ({ projectId: locationMeta.projectId, agentId: locationMeta.agentId ?? '', path: asset.path }))
+      : [{ projectId: meta?.projectId ?? null, agentId: meta?.agentId ?? '', path: selected.path }]
+    let legacyCentral: { asset: AssetRecord | null; reason: string } | null = null
+    const results = [] as Array<{ projectId: string | null; agentId: string; path: string; method: 'copy' | 'symlink' | null; status: DesktopStatus }>
+    for (const location of locations) {
+      const method = await this.installMethod(location.path)
+      const record = await this.appStore.findInstallationSourceByTarget({
+        scope: selection.source.kind,
+        projectId: selection.source.kind === 'project' ? selection.source.projectId : null,
+        agentId: location.agentId,
+        targetPath: location.path,
+      })
+      if (record) {
+        try {
+          const source = await this.resolveRecordedSource(record)
+          results.push(await evaluate(source.coreAsset, location))
+        } catch {
+          results.push({ ...location, method, status: sourceUnavailableStatus() })
+        }
+        continue
+      }
+      if (!legacyCentral) {
+        try { legacyCentral = this.findCentralAsset(selected, await this.scan({ kind: 'central' })) }
+        catch { legacyCentral = { asset: null, reason: '中央分支不存在同名资产' } }
+      }
+      if (!legacyCentral.asset) {
+        results.push({ ...location, method, status: unknownStatus(legacyCentral.reason) })
+        continue
+      }
+      const coreAsset = this.coreCatalog.get(keyFor({ kind: 'central' }, legacyCentral.asset.id)) ?? legacyCentral.asset as unknown as CoreAsset
+      results.push(await evaluate(coreAsset, location))
+    }
     return results
+  }
+
+  async relinkInstallation(input: RelinkInstallationInput): Promise<void> {
+    const record = (await this.appStore.listInstallationSources()).find((entry) => entry.id === input.installationId)
+    if (!record) throw new Error('unknown installation source id')
+    const repository = await this.requireThirdPartyRepositories().resolve(input.repositoryId)
+    const index = repository.assets.findIndex((asset) => asset.id === input.assetId)
+    if (index < 0) throw new Error('unknown repository asset id')
+    const asset = repository.assets[index]!
+    if (asset.type !== 'skills') throw new Error('only Skills can be relinked')
+    const coreAsset = (repository.coreAssets[index] ?? asset) as CoreAsset
+    const status = AssetStatusRecordSchema.parse(await this.core.evaluateAssetStatus(coreAsset, record.targetPath))
+    if (!status.sourceHash || status.sourceHash !== status.installedHash) {
+      throw new Error('installed content differs from the selected source; update or replace it instead')
+    }
+    await this.appStore.upsertInstallationSource({
+      ...record,
+      asset: { type: 'skills', group: asset.group, name: asset.name },
+      source: {
+        kind: 'third-party',
+        repositoryId: repository.repository.id,
+        repositoryName: repository.repository.name,
+        repositoryUrl: repository.repository.url,
+      },
+      installedCommit: repository.commit,
+      installedHash: status.installedHash,
+    })
   }
 
   async plan(request: OperationRequest): Promise<OperationPlan> {
