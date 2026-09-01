@@ -25,6 +25,13 @@ const api: DesktopApi = {
     setDefaultBranch: (branch) => invoke(Channels.repositoriesSetDefaultBranch, branch),
     refresh: () => invoke(Channels.repositoriesRefresh),
   },
+  thirdPartyRepositories: {
+    list: () => invoke(Channels.thirdPartyRepositoriesList),
+    add: (input) => invoke(Channels.thirdPartyRepositoriesAdd, input),
+    update: (id, input) => invoke(Channels.thirdPartyRepositoriesUpdate, { id, input }),
+    remove: (id) => invoke(Channels.thirdPartyRepositoriesRemove, id),
+    refresh: (id) => invoke(Channels.thirdPartyRepositoriesRefresh, id),
+  },
   assets: {
     scan: (source) => invoke(Channels.assetsScan, source),
     detail: (asset) => invoke(Channels.assetsDetail, asset),

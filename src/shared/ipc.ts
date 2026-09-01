@@ -5,6 +5,26 @@ export type ThemePreference = z.infer<typeof ThemePreferenceSchema>
 
 const safeId = z.string().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/)
 const safeName = z.string().min(1).max(200)
+const gitBranch = z.string().trim().min(1).max(255).refine((value) =>
+  !value.startsWith('-')
+  && !value.startsWith('.')
+  && !value.endsWith('.')
+  && !value.endsWith('/')
+  && !value.endsWith('.lock')
+  && !value.includes('..')
+  && !value.includes('@{')
+  && !value.includes('//')
+  && !/[\u0000-\u0020\u007f~^:?*[\\]/u.test(value),
+'invalid Git branch')
+const gitRemoteUrl = z.string().trim().min(1).refine((value) => {
+  if (/^[^/@\s]+@[^/:\s]+:.+$/u.test(value)) return true
+  try {
+    const url = new URL(value)
+    if (!['https:', 'ssh:'].includes(url.protocol) || url.password) return false
+    if (url.protocol === 'https:' && url.username) return false
+    return Boolean(url.hostname && url.pathname && url.pathname !== '/')
+  } catch { return false }
+}, 'remote repository must use credential-free HTTPS, SSH, or SCP syntax')
 const safeAbsolutePath = z.string().min(1).refine((value) => {
   if (value.includes('\0')) return false
   const normalized = value.replaceAll('\\', '/')
@@ -43,8 +63,8 @@ export type SourceSelection = z.infer<typeof SourceSelectionSchema>
 export const ThirdPartyRepositorySchema = z.object({
   id: safeId,
   name: safeName,
-  url: z.string().trim().min(1),
-  branch: z.string().trim().min(1).max(255),
+  url: gitRemoteUrl,
+  branch: gitBranch,
   layout: z.enum(['catalog', 'single-skill']),
   createdAt: z.string().datetime(),
   lastFetchedAt: z.string().datetime().nullable(),
@@ -52,9 +72,9 @@ export const ThirdPartyRepositorySchema = z.object({
 export type ThirdPartyRepository = z.infer<typeof ThirdPartyRepositorySchema>
 
 export const ThirdPartyRepositoryInputSchema = z.object({
-  url: z.string().trim().min(1),
+  url: gitRemoteUrl,
   name: z.string().trim().min(1).max(200).optional(),
-  branch: z.string().trim().min(1).max(255).optional(),
+  branch: gitBranch.optional(),
 }).strict()
 export type ThirdPartyRepositoryInput = z.infer<typeof ThirdPartyRepositoryInputSchema>
 
@@ -250,6 +270,13 @@ export interface DesktopApi {
     setDefaultBranch(branch: string): Promise<XcSkillsConfig>
     refresh(): Promise<RepositoryView>
   }
+  thirdPartyRepositories: {
+    list(): Promise<ThirdPartyRepositoryView[]>
+    add(input: ThirdPartyRepositoryInput): Promise<ThirdPartyRepositoryView>
+    update(id: string, input: ThirdPartyRepositoryInput): Promise<ThirdPartyRepositoryView>
+    remove(id: string): Promise<void>
+    refresh(id: string): Promise<ThirdPartyRepositoryView>
+  }
   assets: { scan(source: SourceSelection): Promise<AssetRecord[]>; detail(asset: AssetSelection): Promise<AssetDetail>; statuses(asset: AssetSelection): Promise<Array<{ projectId: string | null; agentId: string; path: string; method: InstallMethod | null; status: AssetStatusRecord }>> }
   operations: { plan(input: OperationRequest): Promise<OperationPlan>; execute(planId: string): Promise<OperationResult>; cancel(planId: string): Promise<void>; onProgress(listener: (progress: OperationProgress) => void): () => void }
   preferences: { getTheme(): Promise<ThemePreference>; setTheme(theme: ThemePreference): Promise<void>; getLastSource(): Promise<SourceSelection> }
@@ -260,6 +287,7 @@ export const Channels = {
   projectsList: 'projects:list', projectsChooseAndAdd: 'projects:chooseAndAdd', projectsRemove: 'projects:remove',
   agentsList: 'agents:list', agentsSetEnabled: 'agents:setEnabled', agentsSaveCustom: 'agents:saveCustom', agentsRemoveCustom: 'agents:removeCustom',
   repositoriesGetConfig: 'repositories:getConfig', repositoriesCurrent: 'repositories:current', repositoriesChooseLocalPath: 'repositories:chooseLocalPath', repositoriesUpdateConfig: 'repositories:updateConfig', repositoriesListBranches: 'repositories:listBranches', repositoriesSelectBranch: 'repositories:selectBranch', repositoriesSetDefaultBranch: 'repositories:setDefaultBranch', repositoriesRefresh: 'repositories:refresh',
+  thirdPartyRepositoriesList: 'third-party-repositories:list', thirdPartyRepositoriesAdd: 'third-party-repositories:add', thirdPartyRepositoriesUpdate: 'third-party-repositories:update', thirdPartyRepositoriesRemove: 'third-party-repositories:remove', thirdPartyRepositoriesRefresh: 'third-party-repositories:refresh',
   assetsScan: 'assets:scan', assetsDetail: 'assets:detail', assetsStatuses: 'assets:statuses',
   operationsPlan: 'operations:plan', operationsExecute: 'operations:execute', operationsCancel: 'operations:cancel', operationsProgress: 'operations:progress',
   preferencesGetTheme: 'preferences:getTheme', preferencesSetTheme: 'preferences:setTheme', preferencesGetLastSource: 'preferences:getLastSource', systemOpenExternal: 'system:openExternal',

@@ -24,6 +24,7 @@ import type {
   AgentDefinition, AssetDetail, AssetRecord, AssetSelection, AssetStatusRecord as DesktopStatus,
   DesktopState, OperationPlan, OperationRequest, OperationResult, ProjectRecord, RepositoryBranch,
   RepositoryConfigInput, RepositoryConfigUpdateResult, RepositoryView, SourceSelection,
+  ThirdPartyRepositoryInput, ThirdPartyRepositoryView,
 } from '../../shared/ipc.js'
 import {
   AssetRecordSchema, AssetDetailSchema, AssetStatusRecordSchema, XcSkillsConfigSchema,
@@ -66,7 +67,7 @@ export class CoreService {
   private readonly coreCatalog = new Map<string, CoreAsset>()
   private readonly metadata = new Map<string, CatalogMeta>()
   private readonly locations = new Map<string, Array<{ asset: AssetRecord; meta: CatalogMeta }>>()
-  private readonly planned = new Map<string, { plan: OperationPlan; controller: AbortController; createdAt: number }>()
+  private readonly planned = new Map<string, { plan: OperationPlan; controller: AbortController; createdAt: number; repositoryId: string | null }>()
   private readonly planExpiryMs = 10 * 60 * 1000
 
   private async installMethod(path: string): Promise<'copy' | 'symlink' | null> {
@@ -200,6 +201,26 @@ export class CoreService {
     return this.config
   }
   async refresh(): Promise<RepositoryView> { await this.resolveSource(true); return this.repositoryView() }
+
+  private requireThirdPartyRepositories(): ThirdPartyRepositoryService {
+    if (!this.thirdPartyRepositories) throw new Error('third-party repository service is not available')
+    return this.thirdPartyRepositories
+  }
+  async listThirdPartyRepositories(): Promise<ThirdPartyRepositoryView[]> { return this.requireThirdPartyRepositories().list() }
+  async addThirdPartyRepository(input: ThirdPartyRepositoryInput): Promise<ThirdPartyRepositoryView> { return this.requireThirdPartyRepositories().add(input) }
+  async updateThirdPartyRepository(id: string, input: ThirdPartyRepositoryInput): Promise<ThirdPartyRepositoryView> {
+    if (this.hasActiveRepositoryPlans(id)) throw new Error('repository is referenced by an active operation plan')
+    return this.requireThirdPartyRepositories().update(id, input)
+  }
+  async removeThirdPartyRepository(id: string): Promise<void> {
+    if (this.hasActiveRepositoryPlans(id)) throw new Error('repository is referenced by an active operation plan')
+    return this.requireThirdPartyRepositories().remove(id)
+  }
+  async refreshThirdPartyRepository(id: string): Promise<ThirdPartyRepositoryView> { return this.requireThirdPartyRepositories().refresh(id) }
+  hasActiveRepositoryPlans(repositoryId: string): boolean {
+    this.prunePlans()
+    return [...this.planned.values()].some((task) => task.repositoryId === repositoryId)
+  }
   private repositoryView(): RepositoryView {
     if (!this.repository) throw new Error('repository has not been resolved')
     const { root: _root, ...view } = this.repository
@@ -374,7 +395,12 @@ export class CoreService {
     const repository = await this.resolveSource().catch(() => null)
     const coreSourceAsset = this.coreCatalog.get(keyFor(sourceSelection.source, sourceSelection.assetId)) ?? sourceAsset as unknown as CoreAsset
     const planned = await this.core.planOperation({ kind: request.kind, asset: coreSourceAsset, sourceBranch: this.selectedBranch ?? 'main', targetRoot, method: request.method, allowSymlink: repository?.allowSymlink ?? this.repository?.allowSymlink ?? true, allowedRoot: targetRoot }) as unknown as OperationPlan
-    this.planned.set(planned.id, { plan: planned, controller: new AbortController(), createdAt: Date.now() })
+    this.planned.set(planned.id, {
+      plan: planned,
+      controller: new AbortController(),
+      createdAt: Date.now(),
+      repositoryId: request.asset.source.kind === 'third-party' ? request.asset.source.repositoryId : null,
+    })
     return planned
   }
   async execute(planId: string, options?: { signal?: AbortSignal; onProgress?: (progress: import('../../shared/ipc.js').OperationProgress) => void }): Promise<OperationResult> {

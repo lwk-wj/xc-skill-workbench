@@ -123,6 +123,66 @@ describe('IPC contracts', () => {
     expect(Channels.repositoriesCurrent).toBe('repositories:current')
   })
 
+  it('uses strict declarative channels for third-party repository management', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-third-party-ipc-'))
+    const handlers = new Map<string, (event: unknown, input?: unknown) => unknown>()
+    const repository = {
+      id: 'repo-1', name: 'Team Skills', url: 'https://example.com/team/skills.git', branch: 'main', layout: 'catalog' as const,
+      createdAt: '2026-09-01T00:00:00.000Z', lastFetchedAt: '2026-09-01T01:00:00.000Z',
+      skillCount: 2, stale: false, cachedAt: '2026-09-01T01:00:00.000Z', lastError: null,
+    }
+    const listThirdPartyRepositories = vi.fn(async () => [repository])
+    const addThirdPartyRepository = vi.fn(async () => repository)
+    const updateThirdPartyRepository = vi.fn(async () => repository)
+    const removeThirdPartyRepository = vi.fn(async () => undefined)
+    const refreshThirdPartyRepository = vi.fn(async () => repository)
+    registerIpc({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+      appStore: new AppStore(join(root, 'state.json')),
+      services: {
+        listThirdPartyRepositories,
+        addThirdPartyRepository,
+        updateThirdPartyRepository,
+        removeThirdPartyRepository,
+        refreshThirdPartyRepository,
+      },
+    })
+
+    await expect(handlers.get(Channels.thirdPartyRepositoriesList)?.({}, undefined)).resolves.toEqual([repository])
+    await expect(handlers.get(Channels.thirdPartyRepositoriesAdd)?.({}, { url: ` ${repository.url} ` })).resolves.toEqual(repository)
+    await expect(handlers.get(Channels.thirdPartyRepositoriesUpdate)?.({}, { id: 'repo-1', input: { url: repository.url, branch: 'main' } })).resolves.toEqual(repository)
+    await expect(handlers.get(Channels.thirdPartyRepositoriesRefresh)?.({}, 'repo-1')).resolves.toEqual(repository)
+    await expect(handlers.get(Channels.thirdPartyRepositoriesRemove)?.({}, 'repo-1')).resolves.toBeUndefined()
+    expect(addThirdPartyRepository).toHaveBeenCalledWith({ url: repository.url })
+    expect(updateThirdPartyRepository).toHaveBeenCalledWith('repo-1', { url: repository.url, branch: 'main' })
+  })
+
+  it('rejects unsafe third-party inputs before service handlers run', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-third-party-invalid-'))
+    const handlers = new Map<string, (event: unknown, input?: unknown) => unknown>()
+    const addThirdPartyRepository = vi.fn()
+    const updateThirdPartyRepository = vi.fn()
+    registerIpc({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+      appStore: new AppStore(join(root, 'state.json')),
+      services: { addThirdPartyRepository, updateThirdPartyRepository },
+    })
+
+    for (const input of [
+      { url: 'file:///tmp/skill' },
+      { url: 'https://token@example.com/skill.git' },
+      { url: 'https://example.com/skill.git', branch: '../main' },
+      { url: 'https://example.com/skill.git', cacheRoot: '/tmp/forged' },
+    ]) {
+      await expect(handlers.get(Channels.thirdPartyRepositoriesAdd)?.({}, input)).rejects.toThrow()
+    }
+    await expect(handlers.get(Channels.thirdPartyRepositoriesUpdate)?.({}, {
+      id: '', input: { url: 'https://example.com/skill.git' },
+    })).rejects.toThrow()
+    expect(addThirdPartyRepository).not.toHaveBeenCalled()
+    expect(updateThirdPartyRepository).not.toHaveBeenCalled()
+  })
+
   it('returns the current repository capabilities through a read-only channel', async () => {
     const root = await mkdtemp(join(tmpdir(), 'xc-desktop-repository-current-'))
     const handlers = new Map<string, (event: unknown, input?: unknown) => unknown>()

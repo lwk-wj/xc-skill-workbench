@@ -67,4 +67,23 @@ describe('preload repository API', () => {
 
     expect(electron.invoke).toHaveBeenCalledWith(Channels.repositoriesCurrent)
   })
+
+  it('forwards third-party repository management through dedicated channels', async () => {
+    const input = { url: 'https://example.com/team/skills.git', name: 'Team Skills' }
+    electron.invoke.mockResolvedValue([])
+
+    await api.thirdPartyRepositories.list()
+    await api.thirdPartyRepositories.add(input)
+    await api.thirdPartyRepositories.update('repo-1', input)
+    await api.thirdPartyRepositories.refresh('repo-1')
+    await api.thirdPartyRepositories.remove('repo-1')
+
+    expect(electron.invoke.mock.calls).toEqual([
+      [Channels.thirdPartyRepositoriesList],
+      [Channels.thirdPartyRepositoriesAdd, input],
+      [Channels.thirdPartyRepositoriesUpdate, { id: 'repo-1', input }],
+      [Channels.thirdPartyRepositoriesRefresh, 'repo-1'],
+      [Channels.thirdPartyRepositoriesRemove, 'repo-1'],
+    ])
+  })
 })

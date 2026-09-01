@@ -4,9 +4,11 @@ import {
   AgentDefinitionSchema, AssetDetailSchema, AssetSelectionSchema, AssetRecordSchema, Channels, ExternalUrlSchema,
   OperationRequestSchema, OperationResultSchema, OperationPlanSchema, OperationProgressSchema, RepositoryBranchSchema, RepositoryViewSchema,
   RepositoryConfigInputSchema, RepositoryConfigUpdateResultSchema, SourceSelectionSchema, ThemePreferenceSchema,
+  ThirdPartyRepositoryInputSchema, ThirdPartyRepositoryViewSchema,
   XcSkillsConfigSchema, type AgentDefinition, type AssetDetail, type AssetRecord,
   type DesktopApi, type OperationPlan, type OperationProgress, type OperationRequest, type OperationResult, type RepositoryBranch,
   type RepositoryConfigInput, type RepositoryConfigUpdateResult, type RepositoryView, type SourceSelection, type XcSkillsConfig,
+  type ThirdPartyRepositoryInput, type ThirdPartyRepositoryView,
 } from '../../shared/ipc.js'
 import type { AppStore } from '../services/app-store.js'
 import type { CoreService } from '../services/core-service.js'
@@ -33,6 +35,11 @@ export interface IpcServices {
   selectBranch?: (branch: string) => Promise<RepositoryView>
   setDefaultBranch?: (branch: string) => Promise<XcSkillsConfig>
   refresh?: () => Promise<RepositoryView>
+  listThirdPartyRepositories?: () => Promise<ThirdPartyRepositoryView[]>
+  addThirdPartyRepository?: (input: ThirdPartyRepositoryInput) => Promise<ThirdPartyRepositoryView>
+  updateThirdPartyRepository?: (id: string, input: ThirdPartyRepositoryInput) => Promise<ThirdPartyRepositoryView>
+  removeThirdPartyRepository?: (id: string) => Promise<void>
+  refreshThirdPartyRepository?: (id: string) => Promise<ThirdPartyRepositoryView>
   scan?: (source: SourceSelection) => Promise<AssetRecord[]>
   detail?: (selection: { source: SourceSelection; assetId: string }) => Promise<AssetDetail>
   statuses?: (selection: { source: SourceSelection; assetId: string }) => Promise<unknown[]>
@@ -66,6 +73,7 @@ export const registerIpc = ({ ipcMain, appStore, services: suppliedServices = {}
     listProjects: () => coreService.listProjects(), chooseAndAddProject: () => coreService.chooseAndAddProject(), removeProject: (id) => coreService.removeProject(id),
     listAgents: () => coreService.listAgents(), setAgentEnabled: (id, enabled) => coreService.setAgentEnabled(id, enabled), saveCustomAgent: (agent) => coreService.saveCustomAgent(agent), removeCustomAgent: (id) => coreService.removeCustomAgent(id),
     getConfig: () => coreService.getConfig(), currentRepository: () => coreService.currentRepository(), updateConfig: (input) => coreService.updateConfig(input), listBranches: () => coreService.listBranches(), selectBranch: (branch) => coreService.selectBranch(branch), setDefaultBranch: (branch) => coreService.setDefaultBranch(branch), refresh: () => coreService.refresh(),
+    listThirdPartyRepositories: () => coreService.listThirdPartyRepositories(), addThirdPartyRepository: (input) => coreService.addThirdPartyRepository(input), updateThirdPartyRepository: (id, input) => coreService.updateThirdPartyRepository(id, input), removeThirdPartyRepository: (id) => coreService.removeThirdPartyRepository(id), refreshThirdPartyRepository: (id) => coreService.refreshThirdPartyRepository(id),
     scan: (source) => coreService.scan(source), detail: (selection) => coreService.detail(selection), statuses: (selection) => coreService.statuses(selection),
     plan: (request) => coreService.plan(request), execute: (planId, options) => coreService.execute(planId, options), cancel: (planId, options) => coreService.cancel(planId, options), rescan: (paths) => coreService.rescanAffected(paths),
   } : {}
@@ -135,6 +143,24 @@ export const registerIpc = ({ ipcMain, appStore, services: suppliedServices = {}
   invoke(Channels.repositoriesSelectBranch, branchSchema, (branch) => services.selectBranch ? services.selectBranch(branch) : unsupported('repositories.selectBranch'))
   invoke(Channels.repositoriesSetDefaultBranch, branchSchema, (branch) => services.setDefaultBranch ? services.setDefaultBranch(branch) : unsupported('repositories.setDefaultBranch'))
   invoke(Channels.repositoriesRefresh, noInput, () => services.refresh ? services.refresh() : unsupported('repositories.refresh'))
+
+  const repositoryIdSchema = z.string().regex(/^[A-Za-z0-9._:-]+$/).min(1).max(200)
+  invoke(Channels.thirdPartyRepositoriesList, noInput, async () => z.array(ThirdPartyRepositoryViewSchema).parse(
+    services.listThirdPartyRepositories ? await services.listThirdPartyRepositories() : unsupported('thirdPartyRepositories.list'),
+  ))
+  invoke(Channels.thirdPartyRepositoriesAdd, ThirdPartyRepositoryInputSchema, async (input) => ThirdPartyRepositoryViewSchema.parse(
+    services.addThirdPartyRepository ? await services.addThirdPartyRepository(input) : unsupported('thirdPartyRepositories.add'),
+  ))
+  invoke(Channels.thirdPartyRepositoriesUpdate, z.object({ id: repositoryIdSchema, input: ThirdPartyRepositoryInputSchema }).strict(), async ({ id, input }) => ThirdPartyRepositoryViewSchema.parse(
+    services.updateThirdPartyRepository ? await services.updateThirdPartyRepository(id, input) : unsupported('thirdPartyRepositories.update'),
+  ))
+  invoke(Channels.thirdPartyRepositoriesRemove, repositoryIdSchema, async (id) => {
+    if (!services.removeThirdPartyRepository) return unsupported('thirdPartyRepositories.remove')
+    await services.removeThirdPartyRepository(id)
+  })
+  invoke(Channels.thirdPartyRepositoriesRefresh, repositoryIdSchema, async (id) => ThirdPartyRepositoryViewSchema.parse(
+    services.refreshThirdPartyRepository ? await services.refreshThirdPartyRepository(id) : unsupported('thirdPartyRepositories.refresh'),
+  ))
 
   invoke(Channels.assetsScan, SourceSelectionSchema, (source) => services.scan ? services.scan(source) : unsupported('assets.scan'))
   invoke(Channels.assetsDetail, AssetSelectionSchema, (selection) => services.detail ? services.detail(selection) : unsupported('assets.detail'))
