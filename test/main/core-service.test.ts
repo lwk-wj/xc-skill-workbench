@@ -544,4 +544,88 @@ describe('CoreService', () => {
     expect(evaluateAssetStatus).toHaveBeenCalledWith(rawAsset, await realpath(targetPath))
     await rm(root, { recursive: true, force: true })
   })
+
+  it('records third-party provenance only after a completed install and removes it after uninstall', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-third-party-operation-'))
+    const targetRoot = join(root, 'global', 'skills')
+    const sourceRoot = join(root, 'source', 'demo')
+    await mkdir(sourceRoot, { recursive: true })
+    const store = new AppStore(join(root, 'state.json'))
+    const repository = { id: 'repo-1', name: 'Team Skills', url: 'https://example.com/team.git', branch: 'main', layout: 'catalog' as const, createdAt: '2026-09-01T00:00:00.000Z', lastFetchedAt: '2026-09-01T01:00:00.000Z' }
+    await store.saveThirdPartyRepository(repository)
+    const rawAsset = { id: 'asset-1', type: 'skills' as const, name: 'demo', group: '', path: sourceRoot, entryPath: join(sourceRoot, 'SKILL.md'), entryState: 'active' as const, description: 'Demo', version: null }
+    const thirdPartyRepositories = { resolve: async () => ({ repository, root: join(root, 'source'), branch: 'main', commit: 'b'.repeat(40), layout: 'catalog' as const, stale: false, cachedAt: repository.lastFetchedAt, lastError: null, assets: [rawAsset], coreAssets: [rawAsset] }) }
+    const agent = { id: 'codex', name: 'Codex', projectBaseDir: '.codex', globalBaseDir: join(root, 'global'), assetDirs: { skills: 'skills', rules: 'rules', workflows: 'workflows' }, builtIn: true, enabled: true }
+    let resultStatus: 'completed' | 'rolled_back' = 'rolled_back'
+    const planOperation = vi.fn(async ({ kind, asset }: { kind: string; asset: typeof rawAsset }) => ({
+      id: `plan-${kind}`, kind, asset, sourceBranch: 'main', sourceHash: 'source-hash', targetRoot,
+      targetPath: join(targetRoot, asset.name), method: kind === 'install' ? 'copy' : null,
+      steps: [], warnings: [], requiresOverwriteConfirmation: false,
+    }))
+    const service = new CoreService({
+      appStore: store,
+      thirdPartyRepositories: thirdPartyRepositories as never,
+      core: {
+        BUILTIN_AGENTS: [agent],
+        resolveAgentAssetRoot: () => targetRoot,
+        planOperation: planOperation as never,
+        executeOperation: async (plan: { id: string; targetPath: string }) => ({ planId: plan.id, status: resultStatus, affectedPaths: [plan.targetPath], residualPaths: [] }),
+        evaluateAssetStatus: async () => ({ status: 'current', updateAvailable: false, locallyModified: false, sourceHash: 'source-hash', installedHash: 'installed-hash', sourceVersion: null, installedVersion: null, resolvedTarget: join(targetRoot, 'demo'), reason: 'current' }),
+      },
+    })
+    const [asset] = await service.scan({ kind: 'third-party', repositoryId: 'repo-1' })
+    const request = { kind: 'install' as const, asset: { source: { kind: 'third-party' as const, repositoryId: 'repo-1' }, assetId: asset!.id }, target: { scope: 'global' as const, agentId: 'codex' }, method: 'copy' as const }
+
+    const rolledBackPlan = await service.plan(request)
+    await service.execute(rolledBackPlan.id)
+    await expect(store.listInstallationSources()).resolves.toEqual([])
+
+    resultStatus = 'completed'
+    const completedPlan = await service.plan(request)
+    await service.execute(completedPlan.id)
+    await expect(store.listInstallationSources()).resolves.toMatchObject([{
+      source: { kind: 'third-party', repositoryId: 'repo-1' }, installedCommit: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', installedHash: 'installed-hash',
+    }])
+
+    const installed = { ...rawAsset, id: 'installed', path: join(targetRoot, 'demo'), entryPath: join(targetRoot, 'demo', 'SKILL.md') }
+    ;(service as unknown as { catalog: Map<string, unknown> }).catalog.set(`${JSON.stringify({ kind: 'global' })}:${installed.id}`, installed)
+    ;(service as unknown as { coreCatalog: Map<string, unknown> }).coreCatalog.set(`${JSON.stringify({ kind: 'global' })}:${installed.id}`, installed)
+    ;(service as unknown as { metadata: Map<string, unknown> }).metadata.set(`${JSON.stringify({ kind: 'global' })}:${installed.id}`, { source: { kind: 'global' }, projectId: null, agentId: 'codex', method: null })
+    const uninstallPlan = await service.plan({ kind: 'uninstall', asset: { source: { kind: 'global' }, assetId: installed.id }, target: { scope: 'global', agentId: 'codex' }, method: null })
+    await service.execute(uninstallPlan.id)
+    await expect(store.listInstallationSources()).resolves.toEqual([])
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it('blocks a different-source target unless replacement is explicit', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-source-conflict-'))
+    const targetRoot = join(root, 'global', 'skills')
+    const targetPath = join(targetRoot, 'demo')
+    await mkdir(targetPath, { recursive: true })
+    const store = new AppStore(join(root, 'state.json'))
+    const repository = { id: 'repo-1', name: 'Team Skills', url: 'https://example.com/team.git', branch: 'main', layout: 'catalog' as const, createdAt: '2026-09-01T00:00:00.000Z', lastFetchedAt: null }
+    await store.saveThirdPartyRepository(repository)
+    await store.upsertInstallationSource({ id: 'install-1', scope: 'global', projectId: null, agentId: 'codex', targetPath, asset: { type: 'skills', group: '', name: 'demo' }, source: { kind: 'central', repositoryId: null, repositoryName: '中央仓库', repositoryUrl: null }, installedCommit: null, installedHash: 'old' })
+    const rawAsset = { id: 'asset-1', type: 'skills' as const, name: 'demo', group: '', path: join(root, 'source'), entryPath: join(root, 'source', 'SKILL.md'), entryState: 'active' as const, description: 'Demo', version: null }
+    const service = new CoreService({
+      appStore: store,
+      thirdPartyRepositories: { resolve: async () => ({ repository, root: rawAsset.path, branch: 'main', commit: 'a'.repeat(40), layout: 'catalog', stale: false, cachedAt: null, lastError: null, assets: [rawAsset], coreAssets: [rawAsset] }) } as never,
+      core: {
+        BUILTIN_AGENTS: [{ id: 'codex', name: 'Codex', projectBaseDir: '.codex', globalBaseDir: join(root, 'global'), assetDirs: { skills: 'skills', rules: 'rules', workflows: 'workflows' }, builtIn: true, enabled: true }],
+        resolveAgentAssetRoot: () => targetRoot,
+        planOperation: async ({ kind, asset }) => ({ id: 'plan-replace', kind, asset, sourceBranch: 'main', sourceHash: 'new', targetRoot, targetPath, method: 'copy', steps: [], warnings: [], requiresOverwriteConfirmation: false }),
+      },
+    })
+    const [asset] = await service.scan({ kind: 'third-party', repositoryId: 'repo-1' })
+    const request = { kind: 'install' as const, asset: { source: { kind: 'third-party' as const, repositoryId: 'repo-1' }, assetId: asset!.id }, target: { scope: 'global' as const, agentId: 'codex' }, method: 'copy' as const }
+
+    await expect(service.inspectSourceConflict(request)).resolves.toMatchObject({
+      targetPath: await realpath(targetPath),
+      existing: { kind: 'central', label: '中央仓库' },
+      requested: { kind: 'third-party', repositoryId: 'repo-1', label: 'Team Skills' },
+    })
+    await expect(service.plan(request)).rejects.toThrow(/ENTRY_CONFLICT/)
+    await expect(service.plan({ ...request, replaceExistingSource: true })).resolves.toMatchObject({ warnings: expect.arrayContaining([expect.stringMatching(/替换/)]) })
+    await rm(root, { recursive: true, force: true })
+  })
 })

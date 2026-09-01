@@ -6,11 +6,13 @@ import {
   RepositoryConfigInputSchema, RepositoryConfigUpdateResultSchema, SourceSelectionSchema, ThemePreferenceSchema,
   ThirdPartyRepositoryInputSchema, ThirdPartyRepositoryViewSchema,
   RelinkInstallationInputSchema,
+  SourceConflictSchema,
   XcSkillsConfigSchema, type AgentDefinition, type AssetDetail, type AssetRecord,
   type DesktopApi, type OperationPlan, type OperationProgress, type OperationRequest, type OperationResult, type RepositoryBranch,
   type RepositoryConfigInput, type RepositoryConfigUpdateResult, type RepositoryView, type SourceSelection, type XcSkillsConfig,
   type ThirdPartyRepositoryInput, type ThirdPartyRepositoryView,
   type RelinkInstallationInput,
+  type SourceConflict,
 } from '../../shared/ipc.js'
 import type { AppStore } from '../services/app-store.js'
 import type { CoreService } from '../services/core-service.js'
@@ -47,6 +49,7 @@ export interface IpcServices {
   detail?: (selection: { source: SourceSelection; assetId: string }) => Promise<AssetDetail>
   statuses?: (selection: { source: SourceSelection; assetId: string }) => Promise<unknown[]>
   plan?: (request: OperationRequest) => Promise<OperationPlan>
+  inspectSourceConflict?: (request: OperationRequest) => Promise<SourceConflict | null>
   execute?: (planId: string, options?: { signal?: AbortSignal; onProgress?: (progress: OperationProgress) => void }) => Promise<OperationResult>
   cancel?: (planId: string, options?: { signal?: AbortSignal }) => Promise<void>
   rescan?: (affectedPaths: string[]) => Promise<void>
@@ -79,6 +82,7 @@ export const registerIpc = ({ ipcMain, appStore, services: suppliedServices = {}
     listThirdPartyRepositories: () => coreService.listThirdPartyRepositories(), addThirdPartyRepository: (input) => coreService.addThirdPartyRepository(input), updateThirdPartyRepository: (id, input) => coreService.updateThirdPartyRepository(id, input), removeThirdPartyRepository: (id) => coreService.removeThirdPartyRepository(id), refreshThirdPartyRepository: (id) => coreService.refreshThirdPartyRepository(id),
     relinkInstallation: (input) => coreService.relinkInstallation(input),
     scan: (source) => coreService.scan(source), detail: (selection) => coreService.detail(selection), statuses: (selection) => coreService.statuses(selection),
+    inspectSourceConflict: (request) => coreService.inspectSourceConflict(request),
     plan: (request) => coreService.plan(request), execute: (planId, options) => coreService.execute(planId, options), cancel: (planId, options) => coreService.cancel(planId, options), rescan: (paths) => coreService.rescanAffected(paths),
   } : {}
   const services: IpcServices = { ...coreBindings, ...suppliedServices }
@@ -174,6 +178,12 @@ export const registerIpc = ({ ipcMain, appStore, services: suppliedServices = {}
   invoke(Channels.assetsDetail, AssetSelectionSchema, (selection) => services.detail ? services.detail(selection) : unsupported('assets.detail'))
   invoke(Channels.assetsStatuses, AssetSelectionSchema, (selection) => services.statuses ? services.statuses(selection) : unsupported('assets.statuses'))
 
+  invoke(Channels.operationsInspectSourceConflict, OperationRequestSchema, async (request) => {
+    const conflict = services.inspectSourceConflict
+      ? await services.inspectSourceConflict(request)
+      : unsupported('operations.inspectSourceConflict')
+    return conflict === null ? null : SourceConflictSchema.parse(conflict)
+  })
   invoke(Channels.operationsPlan, OperationRequestSchema, async (request, event) => {
     prunePlans()
     const state = await appStore.read()

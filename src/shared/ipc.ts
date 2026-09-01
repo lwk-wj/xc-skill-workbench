@@ -250,8 +250,20 @@ export const OperationRequestSchema = z.object({
   target: OperationTargetSchema,
   method: InstallMethodSchema.nullable(),
   overwriteModified: z.boolean().optional(),
-})
+  replaceExistingSource: z.boolean().optional(),
+}).strict()
 export type OperationRequest = z.infer<typeof OperationRequestSchema>
+export const SourceConflictPartySchema = z.object({
+  kind: z.enum(['central', 'third-party', 'untracked']),
+  repositoryId: safeId.nullable(),
+  label: z.string().min(1),
+}).strict()
+export const SourceConflictSchema = z.object({
+  targetPath: safeAbsolutePath,
+  existing: SourceConflictPartySchema,
+  requested: SourceConflictPartySchema,
+}).strict()
+export type SourceConflict = z.infer<typeof SourceConflictSchema>
 export const OperationStepSchema = z.object({ kind: z.enum(['ensure_dir', 'copy', 'symlink', 'backup', 'remove', 'rename']), source: z.string().optional(), target: safeAbsolutePath })
 export const OperationPlanSchema = z.object({ id: safeId, kind: OperationKindSchema, asset: AssetRecordSchema.pick({ id: true, name: true, type: true, path: true }), sourceBranch: z.string(), sourceHash: z.string(), targetRoot: safeAbsolutePath, targetPath: safeAbsolutePath, method: InstallMethodSchema.nullable(), steps: z.array(OperationStepSchema), warnings: z.array(z.string()), requiresOverwriteConfirmation: z.boolean() })
 export type OperationPlan = z.infer<typeof OperationPlanSchema>
@@ -286,7 +298,7 @@ export interface DesktopApi {
     relinkInstallation(input: RelinkInstallationInput): Promise<void>
   }
   assets: { scan(source: SourceSelection): Promise<AssetRecord[]>; detail(asset: AssetSelection): Promise<AssetDetail>; statuses(asset: AssetSelection): Promise<Array<{ projectId: string | null; agentId: string; path: string; method: InstallMethod | null; status: AssetStatusRecord }>> }
-  operations: { plan(input: OperationRequest): Promise<OperationPlan>; execute(planId: string): Promise<OperationResult>; cancel(planId: string): Promise<void>; onProgress(listener: (progress: OperationProgress) => void): () => void }
+  operations: { inspectSourceConflict(input: OperationRequest): Promise<SourceConflict | null>; plan(input: OperationRequest): Promise<OperationPlan>; execute(planId: string): Promise<OperationResult>; cancel(planId: string): Promise<void>; onProgress(listener: (progress: OperationProgress) => void): () => void }
   preferences: { getTheme(): Promise<ThemePreference>; setTheme(theme: ThemePreference): Promise<void>; getLastSource(): Promise<SourceSelection> }
   system: { openExternal(url: string): Promise<void> }
 }
@@ -298,7 +310,7 @@ export const Channels = {
   thirdPartyRepositoriesList: 'third-party-repositories:list', thirdPartyRepositoriesAdd: 'third-party-repositories:add', thirdPartyRepositoriesUpdate: 'third-party-repositories:update', thirdPartyRepositoriesRemove: 'third-party-repositories:remove', thirdPartyRepositoriesRefresh: 'third-party-repositories:refresh',
   thirdPartyRepositoriesRelinkInstallation: 'third-party-repositories:relinkInstallation',
   assetsScan: 'assets:scan', assetsDetail: 'assets:detail', assetsStatuses: 'assets:statuses',
-  operationsPlan: 'operations:plan', operationsExecute: 'operations:execute', operationsCancel: 'operations:cancel', operationsProgress: 'operations:progress',
+  operationsInspectSourceConflict: 'operations:inspectSourceConflict', operationsPlan: 'operations:plan', operationsExecute: 'operations:execute', operationsCancel: 'operations:cancel', operationsProgress: 'operations:progress',
   preferencesGetTheme: 'preferences:getTheme', preferencesSetTheme: 'preferences:setTheme', preferencesGetLastSource: 'preferences:getLastSource', systemOpenExternal: 'system:openExternal',
 } as const
 /** Stable alias for Main/Preload consumers that prefer an explicit channel namespace. */

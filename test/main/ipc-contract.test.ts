@@ -36,6 +36,34 @@ describe('IPC contracts', () => {
     await expect(handlers.get('operations:plan')?.({}, request)).rejects.toThrow(/unknown Agent/)
   })
 
+  it('parses source-conflict inspection requests and Main-derived responses', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-conflict-ipc-'))
+    const handlers = new Map<string, (event: unknown, input?: unknown) => unknown>()
+    const inspectSourceConflict = vi.fn(async () => ({
+      targetPath: '/tmp/skills/demo',
+      existing: { kind: 'central' as const, repositoryId: null, label: '中央仓库' },
+      requested: { kind: 'third-party' as const, repositoryId: 'repo-1', label: 'Team Skills' },
+    }))
+    registerIpc({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+      appStore: new AppStore(join(root, 'state.json')),
+      services: { inspectSourceConflict },
+    })
+    const request = {
+      kind: 'install',
+      asset: { source: { kind: 'third-party', repositoryId: 'repo-1' }, assetId: 'asset-1' },
+      target: { scope: 'global', agentId: 'codex' },
+      method: 'copy',
+      replaceExistingSource: true,
+    }
+
+    await expect(handlers.get(Channels.operationsInspectSourceConflict)?.({}, request)).resolves.toMatchObject({
+      requested: { repositoryId: 'repo-1' },
+    })
+    await expect(handlers.get(Channels.operationsInspectSourceConflict)?.({}, { ...request, targetPath: '/tmp/forged' })).rejects.toThrow()
+    expect(inspectSourceConflict).toHaveBeenCalledTimes(1)
+  })
+
   it('rejects non-http external URLs and invalid themes', () => {
     expect(() => ExternalUrlSchema.parse('file:///etc/passwd')).toThrow()
     expect(() => ThemePreferenceSchema.parse('solarized')).toThrow()

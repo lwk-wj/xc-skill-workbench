@@ -39,6 +39,7 @@ const api: DesktopApi = {
     statuses: (asset) => invoke(Channels.assetsStatuses, asset),
   },
   operations: {
+    inspectSourceConflict: (input) => invoke(Channels.operationsInspectSourceConflict, input),
     plan: (input) => invoke(Channels.operationsPlan, input),
     execute: (planId) => invoke(Channels.operationsExecute, planId),
     cancel: (planId) => invoke(Channels.operationsCancel, planId),

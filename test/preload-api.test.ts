@@ -88,4 +88,18 @@ describe('preload repository API', () => {
       [Channels.thirdPartyRepositoriesRemove, 'repo-1'],
     ])
   })
+
+  it('forwards source-conflict inspection without exposing a target path input', async () => {
+    const input = {
+      kind: 'install' as const,
+      asset: { source: { kind: 'third-party' as const, repositoryId: 'repo-1' }, assetId: 'asset-1' },
+      target: { scope: 'global' as const, agentId: 'codex' },
+      method: 'copy' as const,
+    }
+    electron.invoke.mockResolvedValue(null)
+
+    await api.operations.inspectSourceConflict(input)
+
+    expect(electron.invoke).toHaveBeenCalledWith(Channels.operationsInspectSourceConflict, input)
+  })
 })

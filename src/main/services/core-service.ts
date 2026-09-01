@@ -24,7 +24,7 @@ import type {
   AgentDefinition, AssetDetail, AssetRecord, AssetSelection, AssetStatusRecord as DesktopStatus,
   DesktopState, InstallationSourceRecord, OperationPlan, OperationRequest, OperationResult, ProjectRecord, RepositoryBranch,
   RepositoryConfigInput, RepositoryConfigUpdateResult, RepositoryView, SourceSelection,
-  ThirdPartyRepositoryInput, ThirdPartyRepositoryView, RelinkInstallationInput,
+  ThirdPartyRepositoryInput, ThirdPartyRepositoryView, RelinkInstallationInput, SourceConflict,
 } from '../../shared/ipc.js'
 import {
   AssetRecordSchema, AssetDetailSchema, AssetStatusRecordSchema, XcSkillsConfigSchema,
@@ -43,6 +43,22 @@ type CoreServiceOptions = {
   log?: { write(level: string, message: string, context?: unknown): Promise<void> }
   core?: CoreOverrides
   thirdPartyRepositories?: ThirdPartyRepositoryService
+}
+type PlannedSourceSnapshot = {
+  selection: SourceSelection
+  asset: AssetRecord
+  coreAsset: CoreAsset
+  repositoryId: string | null
+  repositoryName: string
+  repositoryUrl: string | null
+  commit: string | null
+}
+type PlannedTargetSnapshot = {
+  scope: 'project' | 'global'
+  projectId: string | null
+  agentId: string
+  targetPath: string
+  previousInstallationId: string | null
 }
 
 const asDesktopAsset = (asset: unknown): AssetRecord => AssetRecordSchema.parse(asset)
@@ -71,7 +87,15 @@ export class CoreService {
   private readonly coreCatalog = new Map<string, CoreAsset>()
   private readonly metadata = new Map<string, CatalogMeta>()
   private readonly locations = new Map<string, Array<{ asset: AssetRecord; meta: CatalogMeta }>>()
-  private readonly planned = new Map<string, { plan: OperationPlan; controller: AbortController; createdAt: number; repositoryId: string | null }>()
+  private readonly planned = new Map<string, {
+    plan: OperationPlan
+    request: OperationRequest
+    sourceSnapshot: PlannedSourceSnapshot | null
+    targetSnapshot: PlannedTargetSnapshot
+    controller: AbortController
+    createdAt: number
+    repositoryId: string | null
+  }>()
   private readonly planExpiryMs = 10 * 60 * 1000
 
   private async installMethod(path: string): Promise<'copy' | 'symlink' | null> {
@@ -447,32 +471,131 @@ export class CoreService {
     })
   }
 
-  async plan(request: OperationRequest): Promise<OperationPlan> {
-    this.prunePlans()
-    let sourceAsset = await this.getCatalogAsset(request.asset)
-    let sourceSelection = request.asset
-    if (request.kind === 'update' && request.asset.source.kind !== 'central') {
-      const centralAssets = await this.scan({ kind: 'central' })
-      const match = this.findCentralAsset(sourceAsset, centralAssets)
-      if (!match.asset) throw new Error(match.reason)
-      sourceAsset = match.asset
-      sourceSelection = { source: { kind: 'central' }, assetId: match.asset.id }
-    }
+  private async operationTarget(request: OperationRequest, asset: AssetRecord): Promise<{
+    targetRoot: string
+    targetPath: string
+    projectId: string | null
+  }> {
     const state = await this.appStore.read()
     const agent = (await this.listAgents()).find((item) => item.id === request.target.agentId)
     if (!agent) throw new Error(`unknown Agent id: ${request.target.agentId}`)
     const project = request.target.projectId ? state.projects.find((item) => item.id === request.target.projectId) : undefined
     if (request.target.scope === 'project' && !project) throw new Error('unknown project id')
     const projectRoot = project?.path ?? homedir()
-    const targetRoot = this.core.resolveAgentAssetRoot(agent as unknown as CoreAgent, request.target.scope, projectRoot, sourceAsset.type)
-    const repository = await this.resolveSource().catch(() => null)
-    const coreSourceAsset = this.coreCatalog.get(keyFor(sourceSelection.source, sourceSelection.assetId)) ?? sourceAsset as unknown as CoreAsset
-    const planned = await this.core.planOperation({ kind: request.kind, asset: coreSourceAsset, sourceBranch: this.selectedBranch ?? 'main', targetRoot, method: request.method, allowSymlink: repository?.allowSymlink ?? this.repository?.allowSymlink ?? true, allowedRoot: targetRoot }) as unknown as OperationPlan
+    const targetRoot = this.core.resolveAgentAssetRoot(agent as unknown as CoreAgent, request.target.scope, projectRoot, asset.type)
+    const rawTargetPath = join(targetRoot, asset.name)
+    const targetPath = await import('node:fs/promises').then(({ realpath }) => realpath(rawTargetPath).catch(() => resolve(rawTargetPath)))
+    return { targetRoot, targetPath, projectId: project?.id ?? null }
+  }
+
+  private sameSource(record: InstallationSourceRecord, requested: SourceConflict['requested']): boolean {
+    if (record.source.kind === 'central') return requested.kind === 'central'
+    return requested.kind === 'third-party' && record.source.repositoryId === requested.repositoryId
+  }
+
+  private async requestedSourceParty(source: SourceSelection): Promise<SourceConflict['requested']> {
+    if (source.kind === 'third-party') {
+      const repository = await this.requireThirdPartyRepositories().resolve(source.repositoryId)
+      return { kind: 'third-party', repositoryId: source.repositoryId, label: repository.repository.name }
+    }
+    return { kind: 'central', repositoryId: null, label: '中央仓库' }
+  }
+
+  async inspectSourceConflict(request: OperationRequest): Promise<SourceConflict | null> {
+    if (request.kind !== 'install' && request.kind !== 'update') return null
+    const asset = await this.getCatalogAsset(request.asset)
+    const target = await this.operationTarget(request, asset)
+    const record = await this.appStore.findInstallationSourceByTarget({
+      scope: request.target.scope,
+      projectId: target.projectId,
+      agentId: request.target.agentId,
+      targetPath: target.targetPath,
+    })
+    const requested = await this.requestedSourceParty(request.asset.source)
+    if (record && this.sameSource(record, requested)) return null
+    if (record) {
+      return {
+        targetPath: target.targetPath,
+        existing: record.source.kind === 'central'
+          ? { kind: 'central', repositoryId: null, label: record.source.repositoryName }
+          : { kind: 'third-party', repositoryId: record.source.repositoryId, label: record.source.repositoryName },
+        requested,
+      }
+    }
+    try {
+      await lstat(target.targetPath)
+      return { targetPath: target.targetPath, existing: { kind: 'untracked', repositoryId: null, label: '未登记的现有内容' }, requested }
+    } catch { return null }
+  }
+
+  async plan(request: OperationRequest): Promise<OperationPlan> {
+    this.prunePlans()
+    let sourceAsset = await this.getCatalogAsset(request.asset)
+    let sourceSelection = request.asset
+    let target = await this.operationTarget(request, sourceAsset)
+    const previous = await this.appStore.findInstallationSourceByTarget({ scope: request.target.scope, projectId: target.projectId, agentId: request.target.agentId, targetPath: target.targetPath })
+    if (request.kind === 'update' && (request.asset.source.kind === 'project' || request.asset.source.kind === 'global')) {
+      if (previous) {
+        const recorded = await this.resolveRecordedSource(previous)
+        sourceAsset = recorded.asset
+        sourceSelection = previous.source.kind === 'third-party'
+          ? { source: { kind: 'third-party', repositoryId: previous.source.repositoryId }, assetId: recorded.asset.id }
+          : { source: { kind: 'central' }, assetId: recorded.asset.id }
+      } else {
+        const match = this.findCentralAsset(sourceAsset, await this.scan({ kind: 'central' }))
+        if (!match.asset) throw new Error(match.reason)
+        sourceAsset = match.asset
+        sourceSelection = { source: { kind: 'central' }, assetId: match.asset.id }
+      }
+      target = await this.operationTarget(request, sourceAsset)
+    }
+    const conflict = await this.inspectSourceConflict({ ...request, asset: sourceSelection })
+    if (conflict && !request.replaceExistingSource) throw new Error(`ENTRY_CONFLICT: ${conflict.existing.label} -> ${conflict.requested.label}`)
+    const thirdParty = sourceSelection.source.kind === 'third-party'
+      ? await this.requireThirdPartyRepositories().resolve(sourceSelection.source.repositoryId)
+      : null
+    const centralRepository = thirdParty ? null : await this.resolveSource().catch(() => null)
+    const coreSourceAsset = this.coreCatalog.get(keyFor(sourceSelection.source, sourceSelection.assetId))
+      ?? (thirdParty?.coreAssets[thirdParty.assets.findIndex((asset) => asset.id === sourceSelection.assetId)] as CoreAsset | undefined)
+      ?? sourceAsset as unknown as CoreAsset
+    const plannedRaw = await this.core.planOperation({
+      kind: request.kind,
+      asset: coreSourceAsset,
+      sourceBranch: thirdParty?.branch ?? this.selectedBranch ?? 'main',
+      targetRoot: target.targetRoot,
+      method: thirdParty && (request.kind === 'install' || request.kind === 'update') ? 'copy' : request.method,
+      allowSymlink: thirdParty ? false : centralRepository?.allowSymlink ?? this.repository?.allowSymlink ?? true,
+      allowedRoot: target.targetRoot,
+      overwriteModified: request.overwriteModified || request.replaceExistingSource,
+    }) as unknown as OperationPlan
+    const planned = conflict && request.replaceExistingSource
+      ? { ...plannedRaw, warnings: [...plannedRaw.warnings, `将替换 ${conflict.existing.label} 的现有来源`] }
+      : plannedRaw
+    const sourceSnapshot: PlannedSourceSnapshot | null = request.kind === 'install' || request.kind === 'update'
+      ? {
+          selection: sourceSelection.source,
+          asset: sourceAsset,
+          coreAsset: coreSourceAsset,
+          repositoryId: thirdParty?.repository.id ?? null,
+          repositoryName: thirdParty?.repository.name ?? '中央仓库',
+          repositoryUrl: thirdParty?.repository.url ?? null,
+          commit: thirdParty?.commit ?? ((centralRepository as { commit?: string } | null)?.commit ?? null),
+        }
+      : null
     this.planned.set(planned.id, {
       plan: planned,
+      request,
+      sourceSnapshot,
+      targetSnapshot: {
+        scope: request.target.scope,
+        projectId: target.projectId,
+        agentId: request.target.agentId,
+        targetPath: planned.targetPath,
+        previousInstallationId: previous?.id ?? null,
+      },
       controller: new AbortController(),
       createdAt: Date.now(),
-      repositoryId: request.asset.source.kind === 'third-party' ? request.asset.source.repositoryId : null,
+      repositoryId: thirdParty?.repository.id ?? null,
     })
     return planned
   }
@@ -484,7 +607,33 @@ export class CoreService {
     if (options?.signal?.aborted) task.controller.abort()
     else options?.signal?.addEventListener('abort', abortFromCaller, { once: true })
     try {
-      return await this.core.executeOperation(task.plan as never, { signal: task.controller.signal, onProgress: options?.onProgress }) as unknown as OperationResult
+      const result = await this.core.executeOperation(task.plan as never, { signal: task.controller.signal, onProgress: options?.onProgress }) as unknown as OperationResult
+      if (result.status !== 'completed') return result
+      try {
+        if ((task.request.kind === 'install' || task.request.kind === 'update') && task.sourceSnapshot) {
+          const status = AssetStatusRecordSchema.parse(await this.core.evaluateAssetStatus(task.sourceSnapshot.coreAsset, task.targetSnapshot.targetPath))
+          if (!status.installedHash) throw new Error('installed target hash is unavailable')
+          await this.appStore.upsertInstallationSource({
+            id: task.targetSnapshot.previousInstallationId ?? randomUUID(),
+            scope: task.targetSnapshot.scope,
+            projectId: task.targetSnapshot.projectId,
+            agentId: task.targetSnapshot.agentId,
+            targetPath: task.targetSnapshot.targetPath,
+            asset: { type: 'skills', group: task.sourceSnapshot.asset.group, name: task.sourceSnapshot.asset.name },
+            source: task.sourceSnapshot.repositoryId
+              ? { kind: 'third-party', repositoryId: task.sourceSnapshot.repositoryId, repositoryName: task.sourceSnapshot.repositoryName, repositoryUrl: task.sourceSnapshot.repositoryUrl! }
+              : { kind: 'central', repositoryId: null, repositoryName: task.sourceSnapshot.repositoryName, repositoryUrl: null },
+            installedCommit: task.sourceSnapshot.commit,
+            installedHash: status.installedHash,
+          })
+        } else if (task.request.kind === 'uninstall' && task.targetSnapshot.previousInstallationId) {
+          await this.appStore.removeInstallationSource(task.targetSnapshot.previousInstallationId)
+        }
+      } catch (error) {
+        await this.log?.write('error', 'operation completed but provenance update failed', { planId, targetPath: task.targetSnapshot.targetPath, error: error instanceof Error ? error.message : String(error) })
+        return { ...result, status: 'needs_attention', residualPaths: [...new Set([...result.residualPaths, task.targetSnapshot.targetPath])] }
+      }
+      return result
     } finally {
       options?.signal?.removeEventListener('abort', abortFromCaller)
       this.planned.delete(planId)
