@@ -9,7 +9,7 @@ describe('CoreService', () => {
   it('exposes cached repository capabilities without forcing another resolution', async () => {
     const root = await mkdtemp(join(tmpdir(), 'xc-desktop-current-repository-'))
     const resolveRepositorySource = vi.fn(async () => ({
-      root, branch: 'main', kind: 'branch-cache' as const, allowSymlink: false, stale: false, cachedAt: null,
+      root, branch: 'main', commit: 'a'.repeat(40), kind: 'branch-cache' as const, allowSymlink: false, stale: false, cachedAt: null,
     }))
     const service = new CoreService({
       appStore: new AppStore(join(root, 'state.json')),
@@ -20,7 +20,7 @@ describe('CoreService', () => {
     })
 
     await expect(service.currentRepository()).resolves.toEqual({
-      branch: 'main', kind: 'branch-cache', allowSymlink: false, stale: false, cachedAt: null,
+      branch: 'main', commit: 'a'.repeat(40), kind: 'branch-cache', allowSymlink: false, stale: false, cachedAt: null,
     })
     await service.currentRepository()
     expect(resolveRepositorySource).toHaveBeenCalledTimes(1)
@@ -36,7 +36,7 @@ describe('CoreService', () => {
       appStore: new AppStore(join(root, 'state.json')),
       core: {
         readConfig: async () => ({ mode: 'local', defaultBranch: 'main' }),
-        resolveRepositorySource: async () => ({ root, branch: 'main', kind: 'local-worktree', allowSymlink: true, stale: false, cachedAt: null }),
+        resolveRepositorySource: async () => ({ root, branch: 'main', commit: 'a'.repeat(40), kind: 'local-worktree', allowSymlink: true, stale: false, cachedAt: null }),
       },
     })
 
@@ -86,7 +86,7 @@ describe('CoreService', () => {
     const configPath = join(root, 'config.json')
     await writeFile(configPath, JSON.stringify({ mode: 'local', repoPath: root, defaultBranch: 'main' }))
     const store = new AppStore(join(root, 'state.json'))
-    const service = new CoreService({ appStore: store, configPath, cacheRoot: join(root, 'cache'), chooseDirectory: async () => projectRoot, core: { resolveRepositorySource: async (_config, branch) => ({ root, branch, kind: 'local-worktree', allowSymlink: true, stale: false, cachedAt: null }) } })
+    const service = new CoreService({ appStore: store, configPath, cacheRoot: join(root, 'cache'), chooseDirectory: async () => projectRoot, core: { resolveRepositorySource: async (_config, branch) => ({ root, branch, commit: 'a'.repeat(40), kind: 'local-worktree', allowSymlink: true, stale: false, cachedAt: null }) } })
 
     const project = await service.chooseAndAddProject()
     expect(project?.path).toBe(await realpath(projectRoot))
@@ -131,6 +131,7 @@ describe('CoreService', () => {
           return {
             root: newRoot,
             branch,
+            commit: 'a'.repeat(40),
             kind: 'local-worktree',
             allowSymlink: true,
             stale: false,
@@ -163,6 +164,7 @@ describe('CoreService', () => {
     ])
     expect(result.repository).toEqual({
       branch: 'main',
+      commit: 'a'.repeat(40),
       kind: 'local-worktree',
       allowSymlink: true,
       stale: false,
@@ -216,6 +218,7 @@ describe('CoreService', () => {
         resolveRepositorySource: async (_config, branch) => ({
           root: newRoot,
           branch,
+          commit: 'a'.repeat(40),
           kind: 'local-worktree',
           allowSymlink: true,
           stale: false,
@@ -263,6 +266,7 @@ describe('CoreService', () => {
         resolveRepositorySource: async (_config, branch) => ({
           root: newRoot,
           branch,
+          commit: 'a'.repeat(40),
           kind: 'local-worktree',
           allowSymlink: true,
           stale: false,
@@ -316,7 +320,7 @@ describe('CoreService', () => {
       core: {
         BUILTIN_AGENTS: [agent],
         readConfig: async () => ({ mode: 'local', defaultBranch: 'main' }),
-        resolveRepositorySource: async () => ({ root: centralRoot, branch: 'main', kind: 'local-worktree', allowSymlink: true, stale: false, cachedAt: null }),
+        resolveRepositorySource: async () => ({ root: centralRoot, branch: 'main', commit: 'a'.repeat(40), kind: 'local-worktree', allowSymlink: true, stale: false, cachedAt: null }),
         resolveAgentAssetRoot: (_agent, _scope, _base, type) => ({ skills: globalSkills, rules: globalRules, workflows: globalWorkflows })[type],
         scanAssets: async ({ root: scanRoot }) => { seenRoots.push(scanRoot); return scanRoot === centralRoot ? [centralAsset] : scanRoot === globalSkills ? [installedAsset] : [] },
         evaluateAssetStatus: async () => status,
@@ -360,7 +364,7 @@ describe('CoreService', () => {
       core: {
         BUILTIN_AGENTS: [agent],
         readConfig: async () => ({ mode: 'local', defaultBranch: 'main' }),
-        resolveRepositorySource: async () => ({ root: centralRoot, branch: 'main', kind: 'local-worktree', allowSymlink: true, stale: false, cachedAt: null }),
+        resolveRepositorySource: async () => ({ root: centralRoot, branch: 'main', commit: 'a'.repeat(40), kind: 'local-worktree', allowSymlink: true, stale: false, cachedAt: null }),
         resolveAgentAssetRoot: (_agent, scope, base, type) => scope === 'project' ? join(base, '.codex', type) : join(root, 'global', '.codex', type),
         scanAssets: async ({ root: scanRoot }) => scanRoot === centralRoot ? [centralAsset] : scanRoot === projectSkills ? [installedAsset] : [],
         evaluateAssetStatus,
@@ -397,7 +401,7 @@ describe('CoreService', () => {
       core: {
         BUILTIN_AGENTS: [agent],
         readConfig: async () => ({ mode: 'local', defaultBranch: 'main' }),
-        resolveRepositorySource: async () => ({ root: centralRoot, branch: 'main', kind: 'local-worktree', allowSymlink: true, stale: false, cachedAt: null }),
+        resolveRepositorySource: async () => ({ root: centralRoot, branch: 'main', commit: 'a'.repeat(40), kind: 'local-worktree', allowSymlink: true, stale: false, cachedAt: null }),
         resolveAgentAssetRoot: (_agent, scope, base, type) => scope === 'project' ? join(base, '.codex', type) : join(root, 'global', '.codex', type),
         scanAssets: async ({ root: scanRoot }) => scanRoot === centralRoot ? [centralAsset] : [],
         evaluateAssetStatus,
@@ -429,7 +433,7 @@ describe('CoreService', () => {
       core: {
         BUILTIN_AGENTS: [agent],
         readConfig: async () => ({ mode: 'local', defaultBranch: 'main' }),
-        resolveRepositorySource: async () => ({ root: centralRoot, branch: 'main', kind: 'local-worktree', allowSymlink: true, stale: false, cachedAt: null }),
+        resolveRepositorySource: async () => ({ root: centralRoot, branch: 'main', commit: 'a'.repeat(40), kind: 'local-worktree', allowSymlink: true, stale: false, cachedAt: null }),
         resolveAgentAssetRoot: (_agent, _scope, _base, type) => join(root, 'global', '.codex', type),
         scanAssets: async ({ root: scanRoot }) => scanRoot === centralRoot ? centralAssets : scanRoot === globalSkills ? [installedAsset] : [],
       },
