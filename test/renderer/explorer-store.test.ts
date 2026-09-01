@@ -24,6 +24,10 @@ describe('explorer store', () => {
         saveCustom: vi.fn(), removeCustom: vi.fn(),
       },
       repositories: {
+        getConfig: vi.fn().mockResolvedValue({
+          mode: 'remote', repoPath: '', remoteUrl: 'https://example.com/skills.git',
+          defaultBranch: 'main', defaultGroups: ['miniapp', 'backend', 'h5', 'common'],
+        }),
         listBranches: vi.fn().mockResolvedValue([{ name: 'main', current: true, default: true, remote: false }]),
         selectBranch: vi.fn().mockResolvedValue({ branch: 'main', kind: 'branch-cache', allowSymlink: true, stale: false, cachedAt: null }),
         setDefaultBranch: vi.fn(),
@@ -52,6 +56,19 @@ describe('explorer store', () => {
     expect(store.groupFilter).toBe('all')
     expect(store.agentFilter).toBe('all')
     expect(window.xcSkills.assets.scan).toHaveBeenLastCalledWith({ kind: 'project', projectId: 'proj' })
+  })
+
+  it('uses configured repository groups and excludes an empty discovered group', async () => {
+    vi.mocked(window.xcSkills.assets.scan).mockResolvedValue([
+      { ...skill, group: 'backend' },
+      { ...skill, id: 'ungrouped', name: 'Ungrouped', group: '' },
+      { ...skill, id: 'extra', name: 'Extra', group: 'experimental' },
+    ])
+    const store = useExplorerStore()
+
+    await store.initialize()
+
+    expect(store.groups).toEqual(['all', 'miniapp', 'backend', 'h5', 'common', 'experimental'])
   })
 
   it('ignores a slower scan after a newer source has finished', async () => {

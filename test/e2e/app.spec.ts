@@ -3,7 +3,8 @@ import { readFile } from 'node:fs/promises'
 
 test.describe('desktop smoke workflows', () => {
   test('imports config and renders the central browser', async ({ e2e }) => {
-    await expect(e2e.page.getByText('XC Skills')).toBeVisible()
+    await expect(e2e.page.getByText('XcSkills')).toBeVisible()
+    await expect(e2e.page.getByRole('img', { name: 'XcSkills 标志' })).toBeVisible()
     await expect(e2e.page.getByRole('button', { name: '中央仓库' })).toBeVisible()
     await expect(e2e.page.getByRole('tab', { name: 'Skills' })).toHaveAttribute('aria-selected', 'true')
   })
@@ -166,7 +167,7 @@ test.describe('desktop smoke workflows', () => {
         pathTop: Math.round(path.top),
       }
     })
-    expect(compactLayout.columns).toBeGreaterThanOrEqual(6)
+    expect(compactLayout.columns).toBeGreaterThanOrEqual(5)
     expect(compactLayout.radius).toBe('0px')
     expect(Math.abs(compactLayout.nameTop - compactLayout.pathTop)).toBeLessThanOrEqual(2)
     await drawer.getByRole('tab', { name: '预览' }).click()
@@ -177,5 +178,35 @@ test.describe('desktop smoke workflows', () => {
 
     await row.click()
     await expect(drawer).toBeVisible()
+  })
+
+  test('keeps the operation dialog close control neutral and compact', async ({ e2e }) => {
+    await e2e.page.getByRole('button', { name: '安装到… demo' }).click()
+    const dialog = e2e.page.getByRole('dialog', { name: '安装资源' })
+    const close = dialog.locator('.el-dialog__headerbtn')
+    await expect(close).toBeVisible()
+
+    const appearance = await close.evaluate((element) => {
+      const style = getComputedStyle(element)
+      const box = element.getBoundingClientRect()
+      const icon = element.querySelector('svg')?.getBoundingClientRect()
+      return {
+        backgroundColor: style.backgroundColor,
+        borderTopWidth: style.borderTopWidth,
+        width: Math.round(box.width),
+        height: Math.round(box.height),
+        iconWidth: Math.round(icon?.width ?? 0),
+        iconHeight: Math.round(icon?.height ?? 0),
+      }
+    })
+
+    expect(appearance).toEqual({
+      backgroundColor: 'rgba(0, 0, 0, 0)',
+      borderTopWidth: '0px',
+      width: 32,
+      height: 32,
+      iconWidth: 16,
+      iconHeight: 16,
+    })
   })
 })

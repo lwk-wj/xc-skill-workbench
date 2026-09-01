@@ -63,14 +63,11 @@ describe('Vue asset detail', () => {
     expect(screen.getByText('Demo Project · 项目')).toBeInTheDocument()
   })
 
-  it('emits exact installed-location actions and omits Skill-only controls for Rules', async () => {
+  it('keeps installation status read-only for Skills and Rules', async () => {
     const user = userEvent.setup()
-    const onAction = vi.fn()
-    const view = renderTestApp(AssetDetail, { props: { asset, source: { kind: 'central' }, loadDetail: vi.fn().mockResolvedValue(detail), loadStatuses: vi.fn().mockResolvedValue(statuses) }, attrs: { onAction } })
+    const view = renderTestApp(AssetDetail, { props: { asset, source: { kind: 'central' }, loadDetail: vi.fn().mockResolvedValue(detail), loadStatuses: vi.fn().mockResolvedValue(statuses) } })
     await user.click(await screen.findByRole('tab', { name: /安装状态/ }))
-    await waitFor(() => expect(screen.getByRole('button', { name: '冻结 Skill One' })).toBeInTheDocument())
-    await user.click(screen.getByRole('button', { name: '查看影响并更新 Skill One' }))
-    expect(onAction).toHaveBeenCalledWith('update-with-warning', statuses[1])
+    expect(screen.queryByRole('button', { name: /更新|冻结|解冻|卸载|安装到/ })).toBeNull()
 
     const rule = { ...asset, id: 'codex:rule-one', type: 'rules' as const, name: 'Rule One', entryPath: '/tmp/rule-one/RULE.md' }
     await view.rerender({ asset: rule, source: { kind: 'central' }, loadDetail: vi.fn().mockResolvedValue({ ...detail, ...rule, evolution: '# hidden' }), loadStatuses: vi.fn().mockResolvedValue([{ ...statuses[0] }]) })

@@ -10,7 +10,7 @@ import { useExplorerStore } from './stores/explorer'
 import { useOperationStore } from './stores/operation'
 import { usePreferencesStore } from './stores/preferences'
 import { plainSource } from './app/types'
-import type { OperationKind, SourceSelection } from '../../shared/ipc.js'
+import type { AssetRecord, OperationKind, SourceSelection } from '../../shared/ipc.js'
 
 const explorer = useExplorerStore()
 const operation = useOperationStore()
@@ -32,17 +32,26 @@ watch(() => explorer.selectedAsset, (asset) => {
 type DetailLocation = Awaited<ReturnType<NonNullable<Window['xcSkills']>['assets']['statuses']>>[number]
 const operationKinds = new Set<OperationKind>(['install', 'update', 'uninstall', 'freeze', 'thaw'])
 const currentSource = (): SourceSelection => plainSource(explorer.selectedSource)
-const openOperation = (requestedKind: string, location: DetailLocation): void => {
-  if (!explorer.selectedAsset || requestedKind === 'diagnose') return
+const openOperation = async (requestedKind: string, asset: AssetRecord, location?: DetailLocation): Promise<void> => {
+  if (requestedKind === 'diagnose') return
   const normalized = requestedKind === 'update-with-warning' ? 'update' : requestedKind
   if (!operationKinds.has(normalized as OperationKind)) return
-  void operation.open({
+  let allowSymlink: boolean | undefined
+  if (normalized === 'install' || normalized === 'update') {
+    try {
+      allowSymlink = (await window.xcSkills.repositories.current()).allowSymlink
+    } catch {
+      allowSymlink = false
+    }
+  }
+  await operation.open({
     kind: normalized as OperationKind,
-    asset: explorer.selectedAsset,
+    asset,
     source: currentSource(),
     projects: explorer.projects,
     agents: explorer.agents,
-    location: { projectId: location.projectId, agentId: location.agentId, path: location.path },
+    location: location ? { projectId: location.projectId, agentId: location.agentId, path: location.path } : undefined,
+    allowSymlink,
     onRescan: () => { void explorer.refreshCurrentSource() },
   })
 }
@@ -56,7 +65,10 @@ onMounted(() => {
 <template>
   <main class="app-shell" data-testid="app-shell">
     <SourceSidebar @settings="settingsOpen = true" />
-    <ResourceExplorer @asset-selected="detailOpen = true" />
+    <ResourceExplorer
+      @asset-selected="detailOpen = true"
+      @asset-action="openOperation"
+    />
     <ElDrawer
       v-model="detailOpen"
       class="asset-detail-drawer"
@@ -65,11 +77,13 @@ onMounted(() => {
       destroy-on-close
     >
       <template #header="{ titleId, titleClass }">
-        <div class="asset-detail-title-lockup">
-          <span class="asset-kind-mark" aria-hidden="true">{{ assetKindMark }}</span>
-          <div class="asset-detail-header">
-            <h2 :id="titleId" :class="titleClass">{{ explorer.selectedAsset?.name ?? '资源详情' }}</h2>
-            <small v-if="explorer.selectedAsset">{{ assetMetadata }}</small>
+        <div class="asset-detail-drawer-heading">
+          <div class="asset-detail-title-lockup">
+            <span class="asset-kind-mark" aria-hidden="true">{{ assetKindMark }}</span>
+            <div class="asset-detail-header">
+              <h2 :id="titleId" :class="titleClass">{{ explorer.selectedAsset?.name ?? '资源详情' }}</h2>
+              <small v-if="explorer.selectedAsset">{{ assetMetadata }}</small>
+            </div>
           </div>
         </div>
       </template>
@@ -80,7 +94,6 @@ onMounted(() => {
         :projects="explorer.projects"
         :agents="explorer.agents"
         :show-header="false"
-        @action="openOperation"
       />
     </ElDrawer>
     <OperationDialog />

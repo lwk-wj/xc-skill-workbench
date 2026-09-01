@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ElButton, ElRadioButton, ElRadioGroup } from 'element-plus'
-import type { AgentDefinition, AssetRecord, AssetStatusRecord, InstallMethod, ProjectRecord } from '../../../shared/ipc.js'
+import { ElRadioButton, ElRadioGroup } from 'element-plus'
+import type { AgentDefinition, AssetRecord, InstallMethod, ProjectRecord } from '../../../shared/ipc.js'
+import { assetStatusLabel } from '../lib/asset-status-label'
 
 type StatusLocation = Awaited<ReturnType<NonNullable<Window['xcSkills']>['assets']['statuses']>>[number]
 type ScopeFilter = 'all' | 'global' | 'project'
@@ -16,13 +17,7 @@ const props = withDefaults(defineProps<{
   agents: () => [],
 })
 
-const emit = defineEmits<{ action: [kind: string, location: StatusLocation] }>()
 const scopeFilter = ref<ScopeFilter>('all')
-
-const statusLabels: Record<AssetStatusRecord['status'], string> = {
-  not_installed: '未安装', current: '最新', update_available: '可更新', locally_modified: '本地有修改',
-  frozen: '已冻结', broken_link: '链接失效', conflict: '冲突', invalid: '无效', unknown: '未知',
-}
 
 const installedCount = computed(() => props.statuses.filter((location) => location.status.status !== 'not_installed').length)
 const filteredStatuses = computed(() => props.statuses.filter((location) => {
@@ -53,21 +48,6 @@ const groups = computed(() => {
   })
 })
 
-const actionsFor = (location: StatusLocation): Array<{ label: string; kind: string }> => {
-  const status = location.status.status
-  if (status === 'not_installed') return [{ label: '安装到…', kind: 'install' }]
-  if (status === 'update_available') return [{ label: '更新', kind: 'update' }]
-  if (status === 'locally_modified') return [{ label: '查看影响并更新', kind: 'update-with-warning' }]
-  if (status === 'current') return [
-    { label: '卸载', kind: 'uninstall' },
-    ...(props.asset.type === 'skills' ? [{ label: '冻结', kind: 'freeze' }] : []),
-  ]
-  if (status === 'frozen') return props.asset.type === 'skills'
-    ? [{ label: '解冻', kind: 'thaw' }, { label: '卸载', kind: 'uninstall' }, { label: '更新', kind: 'update' }]
-    : [{ label: '查看诊断', kind: 'diagnose' }]
-  if (status === 'broken_link' || status === 'conflict' || status === 'invalid') return [{ label: '查看诊断', kind: 'diagnose' }]
-  return []
-}
 </script>
 
 <template>
@@ -75,7 +55,7 @@ const actionsFor = (location: StatusLocation): Array<{ label: string; kind: stri
     <header class="installation-view-header">
       <div>
         <h3>安装状态</h3>
-        <p>查看和管理各平台的安装位置</p>
+        <p>查看各平台的安装位置</p>
       </div>
       <div class="installation-summary">
         <span>{{ installedCount }} 已安装</span>
@@ -108,17 +88,7 @@ const actionsFor = (location: StatusLocation): Array<{ label: string; kind: stri
           <small>{{ methodName(location.method) }}</small>
         </div>
         <div class="status-location-state">
-          <span class="status-badge" :data-status="location.status.status">{{ statusLabels[location.status.status] }}</span>
-          <div class="status-actions">
-            <ElButton
-              v-for="action in actionsFor(location)"
-              :key="action.kind"
-              size="small"
-              :aria-label="`${action.label} ${asset.name}`"
-              :data-operation-kind="action.kind"
-              @click="emit('action', action.kind, location)"
-            >{{ action.label }}</ElButton>
-          </div>
+          <span class="status-badge" :data-status="location.status.status">{{ assetStatusLabel(location.status) }}</span>
         </div>
       </article>
     </section>

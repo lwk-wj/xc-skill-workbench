@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { useExplorerStore } from '../stores/explorer'
+import brandMark from '../assets/xcskills-mark.png'
 
 const explorer = useExplorerStore()
 </script>
 
 <template>
   <aside class="source-sidebar" aria-label="资源来源">
-    <div class="brand">XC Skills</div>
+    <div class="brand" aria-label="XcSkills">
+      <img :src="brandMark" alt="XcSkills 标志" />
+      <span>XcSkills</span>
+    </div>
     <nav aria-label="来源导航">
       <div v-for="source in explorer.sources" :key="source.id" class="source-row">
         <button

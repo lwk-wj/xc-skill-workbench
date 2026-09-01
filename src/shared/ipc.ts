@@ -163,6 +163,7 @@ export interface DesktopApi {
   agents: { list(): Promise<AgentDefinition[]>; setEnabled(id: string, enabled: boolean): Promise<AgentDefinition[]>; saveCustom(agent: AgentDefinition): Promise<AgentDefinition[]>; removeCustom(id: string): Promise<AgentDefinition[]> }
   repositories: {
     getConfig(): Promise<XcSkillsConfig>
+    current(): Promise<RepositoryView>
     chooseLocalPath(): Promise<string | null>
     updateConfig(input: RepositoryConfigInput): Promise<RepositoryConfigUpdateResult>
     listBranches(): Promise<RepositoryBranch[]>
@@ -179,7 +180,7 @@ export interface DesktopApi {
 export const Channels = {
   projectsList: 'projects:list', projectsChooseAndAdd: 'projects:chooseAndAdd', projectsRemove: 'projects:remove',
   agentsList: 'agents:list', agentsSetEnabled: 'agents:setEnabled', agentsSaveCustom: 'agents:saveCustom', agentsRemoveCustom: 'agents:removeCustom',
-  repositoriesGetConfig: 'repositories:getConfig', repositoriesChooseLocalPath: 'repositories:chooseLocalPath', repositoriesUpdateConfig: 'repositories:updateConfig', repositoriesListBranches: 'repositories:listBranches', repositoriesSelectBranch: 'repositories:selectBranch', repositoriesSetDefaultBranch: 'repositories:setDefaultBranch', repositoriesRefresh: 'repositories:refresh',
+  repositoriesGetConfig: 'repositories:getConfig', repositoriesCurrent: 'repositories:current', repositoriesChooseLocalPath: 'repositories:chooseLocalPath', repositoriesUpdateConfig: 'repositories:updateConfig', repositoriesListBranches: 'repositories:listBranches', repositoriesSelectBranch: 'repositories:selectBranch', repositoriesSetDefaultBranch: 'repositories:setDefaultBranch', repositoriesRefresh: 'repositories:refresh',
   assetsScan: 'assets:scan', assetsDetail: 'assets:detail', assetsStatuses: 'assets:statuses',
   operationsPlan: 'operations:plan', operationsExecute: 'operations:execute', operationsCancel: 'operations:cancel', operationsProgress: 'operations:progress',
   preferencesGetTheme: 'preferences:getTheme', preferencesSetTheme: 'preferences:setTheme', preferencesGetLastSource: 'preferences:getLastSource', systemOpenExternal: 'system:openExternal',

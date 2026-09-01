@@ -4,9 +4,15 @@ import { useExplorerStore } from '../stores/explorer'
 import AssetList from './AssetList.vue'
 import ErrorNotice from './ErrorNotice.vue'
 import type { AssetType } from '../app/types'
+import type { AssetRecord } from '../../../shared/ipc.js'
+
+type StatusLocation = Awaited<ReturnType<NonNullable<Window['xcSkills']>['assets']['statuses']>>[number]
 
 const explorer = useExplorerStore()
-const emit = defineEmits<{ 'asset-selected': [] }>()
+const emit = defineEmits<{
+  'asset-selected': []
+  'asset-action': [kind: string, asset: AssetRecord, location?: StatusLocation]
+}>()
 const tabs: Array<{ value: AssetType; label: string }> = [
   { value: 'skills', label: 'Skills' },
   { value: 'rules', label: 'Rules' },
@@ -44,7 +50,7 @@ const selectAsset = (assetId: string): void => {
         <label class="search"><span class="sr-only">搜索资源</span><ElInput v-model="explorer.query" aria-label="搜索资源" placeholder="搜索资源" /></label>
       </div>
       <div class="filters">
-        <label class="filter-control"><span class="filter-label">分组</span><ElSelect v-model="explorer.groupFilter" aria-label="分组筛选">
+        <label v-if="explorer.selectedSource.kind === 'central'" class="filter-control"><span class="filter-label">分组</span><ElSelect v-model="explorer.groupFilter" aria-label="分组筛选">
           <ElOption v-for="group in explorer.groups" :key="group" :label="group === 'all' ? '全部分组' : group" :value="group" />
         </ElSelect></label>
         <label class="filter-control"><span class="filter-label">状态</span><ElSelect v-model="explorer.statusFilter" aria-label="状态筛选">
@@ -67,7 +73,10 @@ const selectAsset = (assetId: string): void => {
       :group-filter="explorer.groupFilter"
       :status-filter="explorer.statusFilter"
       :agent-filter="explorer.agentFilter"
+      :management-statuses="explorer.managementStatuses"
       @select="selectAsset"
+      @action="(kind, asset, location) => emit('asset-action', kind, asset, location)"
+      @clear-filters="explorer.query = ''; explorer.groupFilter = 'all'; explorer.statusFilter = 'all'; explorer.agentFilter = 'all'"
     />
   </section>
 </template>

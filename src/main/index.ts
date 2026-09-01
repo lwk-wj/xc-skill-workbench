@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
@@ -13,6 +13,16 @@ import type { WindowBounds } from '../shared/ipc.js'
 const rendererUrl = process.env.ELECTRON_RENDERER_URL
 const rendererFile = join(__dirname, '../renderer/index.html')
 const e2eEnabled = process.env.XC_SKILLS_E2E === '1'
+
+const configureApplicationIcon = (): void => {
+  if (process.platform !== 'darwin') return
+
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, 'icon.png')
+    : resolve('build/icon.png')
+  const icon = nativeImage.createFromPath(iconPath)
+  if (!icon.isEmpty()) app.dock?.setIcon(icon)
+}
 
 // E2E-only process isolation hooks. Production launches ignore these values.
 if (e2eEnabled && process.env.XC_SKILLS_USER_DATA) {
@@ -70,6 +80,7 @@ const createMainWindow = async (appStore: AppStore): Promise<BrowserWindow> => {
 }
 
 app.whenReady().then(async () => {
+  configureApplicationIcon()
   const userData = app.getPath('userData')
   const appStore = new AppStore(join(userData, 'state.json'))
   const log = new LogService(userData)

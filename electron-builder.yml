@@ -5,7 +5,11 @@ directories:
 files:
   - out/**
   - package.json
+extraResources:
+  - from: build/icon.png
+    to: icon.png
 mac:
+  icon: build/icon.icns
   category: public.app-category.developer-tools
   target:
     - target: dmg

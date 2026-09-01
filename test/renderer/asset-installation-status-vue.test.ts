@@ -2,7 +2,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, screen } from '@testing-library/vue'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import AssetInstallationStatus from '../../src/renderer/src/components/AssetInstallationStatus.vue'
 import { renderTestApp } from '../../src/renderer/src/app/render-test-app'
 import type { AgentDefinition, AssetRecord, ProjectRecord } from '../../src/shared/ipc.js'
@@ -27,10 +27,9 @@ const statuses = [
 describe('AssetInstallationStatus', () => {
   afterEach(cleanup)
 
-  it('groups named locations, filters by scope, and emits the unchanged action location', async () => {
+  it('groups named locations, filters by scope, and stays read-only', async () => {
     const user = userEvent.setup()
-    const onAction = vi.fn()
-    renderTestApp(AssetInstallationStatus, { props: { asset, statuses, projects, agents }, attrs: { onAction } })
+    renderTestApp(AssetInstallationStatus, { props: { asset, statuses, projects, agents } })
 
     expect(screen.getByText('Global · 全局')).toBeInTheDocument()
     expect(screen.getByText('Demo Project · 项目')).toBeInTheDocument()
@@ -41,7 +40,29 @@ describe('AssetInstallationStatus', () => {
     expect(screen.queryByText('Global · 全局')).toBeNull()
     expect(screen.getByText('Demo Project · 项目')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '查看影响并更新 Skill One' }))
-    expect(onAction).toHaveBeenCalledWith('update-with-warning', statuses[1])
+    expect(screen.queryByRole('button', { name: /更新|冻结|解冻|卸载|安装到/ })).toBeNull()
+  })
+
+  it('labels an asset without a central counterpart as a non-repository resource', () => {
+    renderTestApp(AssetInstallationStatus, {
+      props: {
+        asset,
+        statuses: [{
+          ...statuses[1]!,
+          status: {
+            ...statuses[1]!.status,
+            status: 'unknown',
+            updateAvailable: false,
+            locallyModified: false,
+            reason: '中央分支不存在同名资产',
+          },
+        }],
+        projects,
+        agents,
+      },
+    })
+
+    expect(screen.getByText('非仓库资源')).toBeInTheDocument()
+    expect(screen.queryByText('未知')).toBeNull()
   })
 })

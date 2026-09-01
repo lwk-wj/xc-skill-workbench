@@ -94,4 +94,23 @@ describe('Vue operation dialog', () => {
     await waitFor(() => expect(screen.getByText('操作已取消')).toBeInTheDocument())
     expect(screen.getByRole('alert')).toHaveTextContent('/project/.codex/skills/Skill One')
   })
+
+  it('keeps symlink visible but disabled when the repository does not support it', async () => {
+    const plan = vi.fn().mockResolvedValue(makePlan('plan-copy', '/project/.codex/skills/Skill One'))
+    window.xcSkills = {
+      operations: { plan, execute: vi.fn(), cancel: vi.fn(), onProgress: vi.fn(() => vi.fn()) },
+    } as never
+    const store = useOperationStore()
+    await store.open({
+      kind: 'install', asset, source: { kind: 'central' }, projects, agents,
+      location: { projectId: 'proj', agentId: 'codex', path: '/project/.codex/skills/Skill One' },
+      allowSymlink: false,
+    })
+
+    render(OperationDialog, { global: { plugins: [pinia, ElementPlus] } })
+
+    await waitFor(() => expect(screen.getByRole('radio', { name: '软链接' })).toBeDisabled())
+    expect(screen.getByText('当前仓库使用远程缓存，仅支持复制安装。切换为本地仓库后可使用软链接。')).toBeInTheDocument()
+    expect(plan).toHaveBeenCalledWith(expect.objectContaining({ method: 'copy' }))
+  })
 })

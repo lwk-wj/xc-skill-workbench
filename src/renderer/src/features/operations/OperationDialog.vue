@@ -43,8 +43,9 @@ const refreshPlans = (): void => { void operation.refreshPlans() }
         <legend>安装方式</legend>
         <ElRadioGroup v-model="operation.method" aria-label="安装方式" @change="refreshPlans">
           <ElRadio value="copy">复制</ElRadio>
-          <ElRadio v-if="operation.allowSymlink" value="symlink">软链接</ElRadio>
+          <ElRadio value="symlink" :disabled="!operation.allowSymlink">软链接</ElRadio>
         </ElRadioGroup>
+        <p v-if="!operation.allowSymlink" class="operation-method-note">当前仓库使用远程缓存，仅支持复制安装。切换为本地仓库后可使用软链接。</p>
       </fieldset>
       <p>目标：{{ operation.targetLabel }} · {{ operation.asset?.name }}</p>
       <section v-if="operation.affectedPaths.length" aria-label="受影响路径">

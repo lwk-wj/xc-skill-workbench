@@ -31,6 +31,11 @@ function makeApi() {
       saveCustom: vi.fn(), removeCustom: vi.fn(),
     },
     repositories: {
+      getConfig: vi.fn().mockResolvedValue({
+        mode: 'remote', repoPath: '', remoteUrl: 'https://example.com/skills.git',
+        defaultBranch: 'main', defaultGroups: ['miniapp', 'backend', 'h5', 'common'],
+      }),
+      current: vi.fn().mockResolvedValue({ branch: 'main', kind: 'branch-cache', allowSymlink: false, stale: false, cachedAt: null }),
       listBranches: vi.fn().mockResolvedValue([
         { name: 'main', current: true, default: true, remote: false },
         { name: 'feature/demo', current: false, default: false, remote: false },
@@ -43,12 +48,25 @@ function makeApi() {
       detail: vi.fn().mockImplementation(async ({ assetId }: { assetId: string }) => ({
         ...(assetId.startsWith('codex:') ? duplicates[0] : duplicates[1]), markdown: '# call-api', evolution: null, files: [],
       })),
-      statuses: vi.fn().mockResolvedValue([]),
+      statuses: vi.fn().mockImplementation(async ({ assetId }: { assetId: string }) => assetId.includes(':') ? [{
+        projectId: 'proj', agentId: assetId.startsWith('codex:') ? 'codex' : 'claude-code', path: assetId.startsWith('codex:') ? duplicates[0]!.path : duplicates[1]!.path, method: 'copy',
+        status: { status: 'current', updateAvailable: false, locallyModified: false, sourceHash: 'a', installedHash: 'a', sourceVersion: '1.0.0', installedVersion: '1.0.0', resolvedTarget: null, reason: '' },
+      }] : []),
     },
     preferences: {
       getTheme: vi.fn().mockResolvedValue('system'), setTheme: vi.fn(), getLastSource: vi.fn().mockResolvedValue({ kind: 'central' }),
     },
     system: { openExternal: vi.fn().mockResolvedValue(undefined) },
+    operations: {
+      plan: vi.fn().mockResolvedValue({
+        id: 'plan-copy', kind: 'install', asset: { id: skill.id, name: skill.name, type: skill.type, path: skill.path },
+        sourceBranch: 'main', sourceHash: 'hash', targetRoot: '/tmp/demo/.codex/skills',
+        targetPath: '/tmp/demo/.codex/skills/Skill One', method: 'copy',
+        steps: [{ kind: 'copy', source: skill.path, target: '/tmp/demo/.codex/skills/Skill One' }],
+        warnings: [], requiresOverwriteConfirmation: false,
+      }),
+      execute: vi.fn(), cancel: vi.fn(), onProgress: vi.fn(() => vi.fn()),
+    },
   }
 }
 
@@ -82,6 +100,23 @@ describe('Vue resource explorer', () => {
     expect(rows[1]).toHaveClass('selected')
   })
 
+  it('renders the XcSkills brand as a compact logo lockup', async () => {
+    renderTestApp(App)
+    expect(screen.getByRole('img', { name: 'XcSkills 标志' })).toBeInTheDocument()
+    expect(screen.getByText('XcSkills')).toBeInTheDocument()
+  })
+
+  it('shows group filtering only for the central repository', async () => {
+    const user = userEvent.setup()
+    renderTestApp(App)
+    await waitFor(() => expect(screen.getByText('Skill One')).toBeInTheDocument())
+
+    expect(screen.getByRole('combobox', { name: '分组筛选' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^Demo$/ }))
+    await waitFor(() => expect(screen.getAllByText('call-api')).toHaveLength(2))
+    expect(screen.queryByRole('combobox', { name: '分组筛选' })).toBeNull()
+  })
+
   it('clears the selected asset before changing sources', async () => {
     const user = userEvent.setup()
     renderTestApp(App)
@@ -106,10 +141,42 @@ describe('Vue resource explorer', () => {
     expect(drawer).toBeInTheDocument()
     expect(within(drawer).getByText('SK')).toBeInTheDocument()
     expect(within(drawer).getByText('Skill · v1.0.0')).toBeInTheDocument()
+    expect(within(drawer).queryByRole('button', { name: '安装到… Skill One' })).toBeNull()
     expect(screen.queryByText('选择资源查看详情')).toBeNull()
 
     await user.click(within(drawer).getByRole('button', { name: /close/i }))
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Skill One' })).toBeNull())
     expect(rowLabel.closest('[role="listitem"]')).toHaveClass('selected')
+  })
+
+  it('uses the current repository capability when opening an install operation', async () => {
+    const user = userEvent.setup()
+    const api = makeApi()
+    vi.mocked(api.assets.statuses).mockResolvedValue([{
+      projectId: 'proj', agentId: 'codex', path: '/tmp/demo/.codex/skills/Skill One', method: null,
+      status: {
+        status: 'not_installed', updateAvailable: false, locallyModified: false,
+        sourceHash: 'hash', installedHash: null, sourceVersion: '1.0.0', installedVersion: null,
+        resolvedTarget: null, reason: '',
+      },
+    }])
+    window.xcSkills = api as never
+    renderTestApp(App)
+
+    await user.click(await screen.findByRole('button', { name: '安装到… Skill One' }))
+
+    const operation = await screen.findByRole('dialog', { name: '安装资源' })
+    expect(api.repositories.current).toHaveBeenCalledTimes(1)
+    expect(within(operation).getByRole('radio', { name: '软链接' })).toBeDisabled()
+  })
+
+  it('opens installation directly from a central repository row', async () => {
+    const user = userEvent.setup()
+    renderTestApp(App)
+
+    await user.click(await screen.findByRole('button', { name: '安装到… Skill One' }))
+
+    expect(screen.queryByRole('dialog', { name: 'Skill One' })).toBeNull()
+    expect(await screen.findByRole('dialog', { name: '安装资源' })).toBeInTheDocument()
   })
 })

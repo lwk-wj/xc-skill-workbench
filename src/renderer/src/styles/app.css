@@ -37,23 +37,21 @@
 
 .brand {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
   padding: 0 12px 27px;
   color: var(--text-primary);
-  font-size: 20px;
-  font-weight: 750;
-  letter-spacing: -0.035em;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
-.brand::after {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-left: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
-  content: "";
-  vertical-align: 3px;
+.brand img {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  object-fit: contain;
 }
 
 .source-sidebar nav {
@@ -184,8 +182,8 @@ h2 {
   margin: 0;
   color: var(--text-primary);
   font-size: 23px;
-  font-weight: 720;
-  letter-spacing: -0.03em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   line-height: 1.25;
 }
 
@@ -597,6 +595,41 @@ h3 {
   transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
 }
 
+.asset-row-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-self: stretch;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.asset-row-management {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.asset-primary-action {
+  min-width: 56px;
+  border-radius: 7px;
+  font-weight: 650;
+}
+
+.asset-overflow-action {
+  width: 30px;
+  min-width: 30px;
+  padding: 0;
+  color: var(--text-secondary);
+  font-size: 17px;
+  letter-spacing: 1px;
+}
+
 .asset-row::before {
   position: absolute;
   top: 12px;
@@ -765,6 +798,46 @@ h3 {
   background: var(--danger-soft);
 }
 
+.asset-empty-state {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 42px 24px 64px;
+  text-align: center;
+}
+
+.asset-empty-state img {
+  width: min(148px, 34vw);
+  max-height: 132px;
+  margin-bottom: 22px;
+  object-fit: contain;
+  opacity: 0.92;
+}
+
+.asset-empty-state h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.asset-empty-state p {
+  max-width: 380px;
+  margin: 7px 0 16px;
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+:root[data-theme="dark"] .asset-empty-state img {
+  opacity: 0.78;
+  filter: saturate(0.88) brightness(1.08);
+}
+
 .prominent {
   margin-top: 22px;
 }
@@ -804,7 +877,7 @@ h3 {
 .form-actions button,
 .settings-footer button,
 .status-actions button,
-.operation-dialog button,
+.operation-dialog .el-dialog__body button,
 .operation-progress button {
   min-height: 34px;
   border: 1px solid color-mix(in srgb, var(--accent) 62%, var(--border));
@@ -821,7 +894,7 @@ h3 {
 .form-actions button:hover,
 .settings-footer button:hover,
 .status-actions button:hover,
-.operation-dialog button:hover,
+.operation-dialog .el-dialog__body button:hover,
 .operation-progress button:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
@@ -869,6 +942,15 @@ h3 {
   min-width: 0;
   align-items: center;
   gap: 11px;
+}
+
+.asset-detail-drawer-heading {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
 }
 
 .asset-kind-mark {
@@ -1208,8 +1290,8 @@ h3 {
 
 .status-location {
   display: grid;
-  grid-template-columns: 28px minmax(90px, .65fr) minmax(160px, 1.65fr) 48px auto auto;
-  grid-template-areas: "mark name path method badge actions";
+  grid-template-columns: 28px minmax(90px, .65fr) minmax(160px, 1.65fr) 48px auto;
+  grid-template-areas: "mark name path method badge";
   align-items: center;
   gap: 10px;
   min-height: 48px;
@@ -1302,21 +1384,6 @@ h3 {
 .status-badge[data-status="conflict"],
 .status-badge[data-status="invalid"] { background: var(--danger-soft); color: var(--danger); }
 
-.status-actions {
-  grid-area: actions;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.status-actions button {
-  min-height: 26px;
-  padding: 3px 7px;
-  font-size: 10px;
-  white-space: nowrap;
-}
-
 .installation-empty {
   display: grid;
   min-height: 220px;
@@ -1332,8 +1399,8 @@ h3 {
     grid-template-columns: 28px minmax(0, 1fr) auto;
     grid-template-areas:
       "mark name badge"
-      ". path actions"
-      ". method actions";
+      ". path badge"
+      ". method badge";
     gap: 3px 9px;
     padding: 9px 10px;
   }
@@ -1342,9 +1409,6 @@ h3 {
     text-align: left;
   }
 
-  .status-actions {
-    align-self: center;
-  }
 }
 
 /* Settings */
@@ -1451,9 +1515,10 @@ h3 {
 }
 
 .settings-header > button,
-.operation-dialog > header > button {
+.operation-dialog .el-dialog__headerbtn {
   display: grid;
   width: 32px;
+  height: 32px;
   min-height: 32px;
   place-items: center;
   border: 0;
@@ -1461,11 +1526,11 @@ h3 {
   background: transparent;
   color: var(--text-tertiary);
   padding: 0;
-  font-size: 20px;
+  font-size: 16px;
 }
 
 .settings-header > button:hover,
-.operation-dialog > header > button:hover {
+.operation-dialog .el-dialog__headerbtn:hover {
   background: var(--surface-hover);
   color: var(--text-primary);
   box-shadow: none;
@@ -1797,14 +1862,14 @@ h3 {
 
 .settings-footer button,
 .form-actions button[type="submit"],
-.operation-dialog button:not([aria-label="关闭"]) {
+.operation-dialog .el-dialog__body button {
   background: var(--accent);
   color: var(--text-on-accent);
 }
 
 .settings-footer button:hover,
 .form-actions button[type="submit"]:hover,
-.operation-dialog button:not([aria-label="关闭"]):hover {
+.operation-dialog .el-dialog__body button:hover {
   background: var(--accent-hover);
   color: var(--text-on-accent);
 }
@@ -1878,6 +1943,13 @@ h3 {
   gap: 6px;
   color: var(--text-secondary);
   font-size: 12px;
+}
+
+.operation-method-note {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.55;
 }
 
 .operation-dialog section[aria-label="受影响路径"] {

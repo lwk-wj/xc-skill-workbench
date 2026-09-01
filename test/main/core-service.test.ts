@@ -6,6 +6,27 @@ import { AppStore } from '../../src/main/services/app-store.js'
 import { CoreService } from '../../src/main/services/core-service.js'
 
 describe('CoreService', () => {
+  it('exposes cached repository capabilities without forcing another resolution', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-current-repository-'))
+    const resolveRepositorySource = vi.fn(async () => ({
+      root, branch: 'main', kind: 'branch-cache' as const, allowSymlink: false, stale: false, cachedAt: null,
+    }))
+    const service = new CoreService({
+      appStore: new AppStore(join(root, 'state.json')),
+      core: {
+        readConfig: async () => ({ mode: 'remote', remoteUrl: 'https://example.com/catalog.git', defaultBranch: 'main' }),
+        resolveRepositorySource,
+      },
+    })
+
+    await expect(service.currentRepository()).resolves.toEqual({
+      branch: 'main', kind: 'branch-cache', allowSymlink: false, stale: false, cachedAt: null,
+    })
+    await service.currentRepository()
+    expect(resolveRepositorySource).toHaveBeenCalledTimes(1)
+    await rm(root, { recursive: true, force: true })
+  })
+
   it('keeps the core scan record when loading asset details', async () => {
     const root = await mkdtemp(join(tmpdir(), 'xc-desktop-detail-'))
     const skillRoot = join(root, 'skills', 'detail-skill')

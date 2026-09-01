@@ -30,7 +30,6 @@ const props = withDefaults(defineProps<{
   showHeader: true,
 })
 
-const emit = defineEmits<{ action: [kind: string, location: StatusLocation] }>()
 const detail = ref<AssetDetailRecord | null>(null)
 const statuses = ref<StatusLocation[]>([])
 const tab = ref('preview')
@@ -45,7 +44,6 @@ const renderedEvolution = computed(() => textWithinLimit(detail.value?.evolution
 const entryFileName = computed(() => props.asset.entryPath.split('/').at(-1) ?? props.asset.entryPath)
 
 const safeMarkdownClick = (event: MouseEvent): void => handleSafeMarkdownClick(event)
-const forwardAction = (kind: string, location: StatusLocation): void => emit('action', kind, location)
 
 const load = async (): Promise<void> => {
   const token = ++requestToken
@@ -118,7 +116,6 @@ watch(
             :statuses="statuses"
             :projects="projects"
             :agents="agents"
-            @action="forwardAction"
           />
         </ElTabPane>
       </ElTabs>

@@ -26,6 +26,7 @@ export interface IpcServices {
   saveCustomAgent?: (agent: AgentDefinition) => Promise<AgentDefinition[]>
   removeCustomAgent?: (id: string) => Promise<AgentDefinition[]>
   getConfig?: () => Promise<XcSkillsConfig>
+  currentRepository?: () => Promise<RepositoryView>
   updateConfig?: (input: RepositoryConfigInput) => Promise<RepositoryConfigUpdateResult>
   listBranches?: () => Promise<RepositoryBranch[]>
   selectBranch?: (branch: string) => Promise<RepositoryView>
@@ -62,7 +63,7 @@ export const registerIpc = ({ ipcMain, appStore, services: suppliedServices = {}
   const coreBindings: IpcServices = coreService ? {
     listProjects: () => coreService.listProjects(), chooseAndAddProject: () => coreService.chooseAndAddProject(), removeProject: (id) => coreService.removeProject(id),
     listAgents: () => coreService.listAgents(), setAgentEnabled: (id, enabled) => coreService.setAgentEnabled(id, enabled), saveCustomAgent: (agent) => coreService.saveCustomAgent(agent), removeCustomAgent: (id) => coreService.removeCustomAgent(id),
-    getConfig: () => coreService.getConfig(), updateConfig: (input) => coreService.updateConfig(input), listBranches: () => coreService.listBranches(), selectBranch: (branch) => coreService.selectBranch(branch), setDefaultBranch: (branch) => coreService.setDefaultBranch(branch), refresh: () => coreService.refresh(),
+    getConfig: () => coreService.getConfig(), currentRepository: () => coreService.currentRepository(), updateConfig: (input) => coreService.updateConfig(input), listBranches: () => coreService.listBranches(), selectBranch: (branch) => coreService.selectBranch(branch), setDefaultBranch: (branch) => coreService.setDefaultBranch(branch), refresh: () => coreService.refresh(),
     scan: (source) => coreService.scan(source), detail: (selection) => coreService.detail(selection), statuses: (selection) => coreService.statuses(selection),
     plan: (request) => coreService.plan(request), execute: (planId, options) => coreService.execute(planId, options), cancel: (planId, options) => coreService.cancel(planId, options), rescan: (paths) => coreService.rescanAffected(paths),
   } : {}
@@ -113,6 +114,9 @@ export const registerIpc = ({ ipcMain, appStore, services: suppliedServices = {}
   invoke(Channels.agentsRemoveCustom, z.string().regex(/^[A-Za-z0-9._:-]+$/).min(1).max(200), async (id) => services.removeCustomAgent ? services.removeCustomAgent(id) : appStore.removeCustomAgent(id))
 
   invoke(Channels.repositoriesGetConfig, noInput, async () => services.getConfig ? services.getConfig() : {})
+  invoke(Channels.repositoriesCurrent, noInput, async () => RepositoryViewSchema.parse(
+    services.currentRepository ? await services.currentRepository() : unsupported('repositories.current'),
+  ))
   invoke(Channels.repositoriesChooseLocalPath, noInput, async () => {
     if (!dialog) return null
     const picked = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })

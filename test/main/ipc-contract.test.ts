@@ -96,6 +96,25 @@ describe('IPC contracts', () => {
   it('uses dedicated channels for repository configuration actions', () => {
     expect(Channels.repositoriesChooseLocalPath).toBe('repositories:chooseLocalPath')
     expect(Channels.repositoriesUpdateConfig).toBe('repositories:updateConfig')
+    expect(Channels.repositoriesCurrent).toBe('repositories:current')
+  })
+
+  it('returns the current repository capabilities through a read-only channel', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-repository-current-'))
+    const handlers = new Map<string, (event: unknown, input?: unknown) => unknown>()
+    const currentRepository = vi.fn(async () => ({
+      branch: 'main', kind: 'branch-cache' as const, allowSymlink: false, stale: false, cachedAt: null,
+    }))
+    registerIpc({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+      appStore: new AppStore(join(root, 'state.json')),
+      services: { currentRepository },
+    })
+
+    await expect(handlers.get(Channels.repositoriesCurrent)?.({}, undefined)).resolves.toMatchObject({
+      kind: 'branch-cache', allowSymlink: false,
+    })
+    expect(currentRepository).toHaveBeenCalledTimes(1)
   })
 
   it('chooses a local repository directory and returns null when selection is cancelled', async () => {

@@ -17,6 +17,7 @@ const api: DesktopApi = {
   },
   repositories: {
     getConfig: () => invoke(Channels.repositoriesGetConfig),
+    current: () => invoke(Channels.repositoriesCurrent),
     chooseLocalPath: () => invoke(Channels.repositoriesChooseLocalPath),
     updateConfig: (input) => invoke(Channels.repositoriesUpdateConfig, input),
     listBranches: () => invoke(Channels.repositoriesListBranches),

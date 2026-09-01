@@ -180,6 +180,10 @@ export class CoreService {
     }
   }
   async listBranches(): Promise<RepositoryBranch[]> { return this.core.listBranches(await this.ensureConfig()) }
+  async currentRepository(): Promise<RepositoryView> {
+    await this.resolveSource()
+    return this.repositoryView()
+  }
   async selectBranch(branch: string): Promise<RepositoryView> {
     this.selectedBranch = branch
     this.repository = await this.resolveSource(true)

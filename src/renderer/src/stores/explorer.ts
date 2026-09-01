@@ -18,6 +18,7 @@ const sourceFromSelection = (selection: SourceSelection, projects: ProjectRecord
 }
 
 export const useExplorerStore = defineStore('explorer', () => {
+  type StatusLocation = Awaited<ReturnType<NonNullable<Window['xcSkills']>['assets']['statuses']>>[number]
   const sources = ref<ExplorerSource[]>([central, globalSource])
   const selectedSource = ref<ExplorerSource>(central)
   const assetType = ref<AssetType>('skills')
@@ -26,6 +27,7 @@ export const useExplorerStore = defineStore('explorer', () => {
   const statusFilter = ref('all')
   const agentFilter = ref('all')
   const assets = ref<AssetRecord[]>([])
+  const managementStatuses = ref<Record<string, StatusLocation[]>>({})
   const selectedAssetId = ref<string | null>(null)
   const branches = ref<RepositoryBranch[]>([])
   const selectedBranch = ref<string | null>(null)
@@ -35,11 +37,15 @@ export const useExplorerStore = defineStore('explorer', () => {
   const cachedAt = ref<string | null>(null)
   const projects = ref<ProjectRecord[]>([])
   const agents = ref<AgentDefinition[]>([])
+  const repositoryGroups = ref<string[]>([])
   let requestId = 0
 
-  const groups = computed(() => ['all', ...new Set(assets.value.map((asset) => asset.group))])
   const selectedAsset = computed(() => assets.value.find((asset) => asset.id === selectedAssetId.value) ?? null)
   const visibleAssets = computed(() => assets.value.filter((asset) => asset.type === assetType.value))
+  const groups = computed(() => ['all', ...new Set([
+    ...repositoryGroups.value,
+    ...visibleAssets.value.map((asset) => asset.group),
+  ].map((group) => group.trim()).filter(Boolean))])
   const agentMap = computed(() => new Map(agents.value.map((agent) => [agent.id, agent.name])))
   const agentName = (agentId?: string): string => agentId ? agentMap.value.get(agentId) ?? agentId : ''
 
@@ -50,12 +56,21 @@ export const useExplorerStore = defineStore('explorer', () => {
     error.value = null
     try {
       const nextAssets = await window.xcSkills.assets.scan(plainSource(source))
+      const statusEntries = source.kind === 'central' ? [] : await Promise.all(nextAssets.map(async (asset) => {
+        try {
+          return [asset.id, await window.xcSkills.assets.statuses({ source: plainSource(source), assetId: asset.id })] as const
+        } catch {
+          return [asset.id, []] as const
+        }
+      }))
       if (id !== requestId) return
       assets.value = nextAssets
+      managementStatuses.value = Object.fromEntries(statusEntries)
       selectedAssetId.value = priorSelected && nextAssets.some((asset) => asset.id === priorSelected) ? priorSelected : null
     } catch (cause) {
       if (id !== requestId) return
       assets.value = []
+      managementStatuses.value = {}
       selectedAssetId.value = null
       error.value = cause instanceof Error ? cause.message : '加载资源失败'
     } finally {
@@ -70,13 +85,15 @@ export const useExplorerStore = defineStore('explorer', () => {
 
   const initialize = async (): Promise<void> => {
     try {
-      const [nextProjects, nextAgents, lastSource] = await Promise.all([
+      const [nextProjects, nextAgents, lastSource, repositoryConfig] = await Promise.all([
         window.xcSkills.projects.list(),
         window.xcSkills.agents.list(),
         window.xcSkills.preferences.getLastSource(),
+        window.xcSkills.repositories.getConfig(),
       ])
       projects.value = nextProjects
       agents.value = nextAgents
+      repositoryGroups.value = repositoryConfig.defaultGroups ?? []
       sources.value = [central, globalSource, ...nextProjects.map(projectSource)]
       selectedSource.value = sourceFromSelection(lastSource, nextProjects)
       await scan(selectedSource.value)
@@ -149,6 +166,7 @@ export const useExplorerStore = defineStore('explorer', () => {
   const refreshCurrentSource = async (): Promise<void> => scan(selectedSource.value)
   const refreshRepository = async (): Promise<void> => {
     try {
+      repositoryGroups.value = (await window.xcSkills.repositories.getConfig()).defaultGroups ?? []
       await loadBranches()
       if (selectedSource.value.kind === 'central') await scan(selectedSource.value)
     } catch (cause) {
@@ -157,8 +175,8 @@ export const useExplorerStore = defineStore('explorer', () => {
   }
 
   return {
-    sources, selectedSource, assetType, query, groupFilter, statusFilter, agentFilter, assets, selectedAssetId,
-    branches, selectedBranch, loading, error, stale, cachedAt, projects, agents,
+    sources, selectedSource, assetType, query, groupFilter, statusFilter, agentFilter, assets, managementStatuses, selectedAssetId,
+    branches, selectedBranch, loading, error, stale, cachedAt, projects, agents, repositoryGroups,
     groups, selectedAsset, visibleAssets, agentName,
     initialize, selectSource, selectBranch, setDefaultBranch, addProject, removeProject,
     refreshAgents, refreshCurrentSource, refreshRepository,

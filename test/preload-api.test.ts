@@ -57,4 +57,14 @@ describe('preload repository API', () => {
 
     expect(electron.invoke).toHaveBeenCalledWith(Channels.repositoriesUpdateConfig, input)
   })
+
+  it('reads the current repository capabilities without refreshing it', async () => {
+    electron.invoke.mockResolvedValue({
+      branch: 'main', kind: 'branch-cache', allowSymlink: false, stale: false, cachedAt: null,
+    })
+
+    await api.repositories.current()
+
+    expect(electron.invoke).toHaveBeenCalledWith(Channels.repositoriesCurrent)
+  })
 })
