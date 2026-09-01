@@ -312,5 +312,6 @@ export const useExplorerStore = defineStore('explorer', () => {
     initialize, selectSource, selectBranch, setDefaultBranch, addProject, removeProject,
     refreshAgents, refreshCurrentSource, refreshRepository, refreshThirdPartyRepository,
     addThirdPartyRepository, updateThirdPartyRepository, removeThirdPartyRepository,
+    syncThirdPartyRepository: updateRepositoryView,
   }
 })

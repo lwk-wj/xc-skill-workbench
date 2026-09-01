@@ -113,4 +113,35 @@ describe('Vue operation dialog', () => {
     expect(screen.getByText('当前仓库使用远程缓存，仅支持复制安装。切换为本地仓库后可使用软链接。')).toBeInTheDocument()
     expect(plan).toHaveBeenCalledWith(expect.objectContaining({ method: 'copy' }))
   })
+
+  it('keeps third-party installs copy-only and requires explicit source replacement', async () => {
+    const user = userEvent.setup()
+    const conflict = {
+      targetPath: '/project/.codex/skills/Skill One',
+      existing: { kind: 'central' as const, repositoryId: null, label: '中央仓库' },
+      requested: { kind: 'third-party' as const, repositoryId: 'repo-1', label: 'Team Skills' },
+    }
+    const inspectSourceConflict = vi.fn().mockResolvedValueOnce(conflict).mockResolvedValueOnce(conflict)
+    const plan = vi.fn().mockResolvedValue(makePlan('plan-replace', conflict.targetPath))
+    window.xcSkills = {
+      operations: { inspectSourceConflict, plan, execute: vi.fn(), cancel: vi.fn(), onProgress: vi.fn(() => vi.fn()) },
+    } as never
+    const store = useOperationStore()
+    await store.open({
+      kind: 'install', asset, source: { kind: 'third-party', repositoryId: 'repo-1' }, projects, agents,
+      location: { projectId: 'proj', agentId: 'codex', path: conflict.targetPath }, allowSymlink: true,
+    })
+
+    render(OperationDialog, { global: { plugins: [pinia, ElementPlus] } })
+
+    expect(screen.queryByRole('radiogroup', { name: '安装方式' })).toBeNull()
+    expect(await screen.findByText('第三方仓库 Skill 使用复制方式安装。')).toBeInTheDocument()
+    expect(screen.getByText('中央仓库')).toBeInTheDocument()
+    expect(screen.getByText('Team Skills')).toBeInTheDocument()
+    expect(screen.getByText(conflict.targetPath)).toBeInTheDocument()
+    expect(plan).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: '使用新来源替换' }))
+    await waitFor(() => expect(plan).toHaveBeenCalledWith(expect.objectContaining({ replaceExistingSource: true, method: 'copy' })))
+  })
 })

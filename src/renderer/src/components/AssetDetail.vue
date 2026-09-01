@@ -29,6 +29,7 @@ const props = withDefaults(defineProps<{
   agents: () => [],
   showHeader: true,
 })
+const emit = defineEmits<{ 'relink-source': [location: StatusLocation] }>()
 
 const detail = ref<AssetDetailRecord | null>(null)
 const statuses = ref<StatusLocation[]>([])
@@ -116,6 +117,7 @@ watch(
             :statuses="statuses"
             :projects="projects"
             :agents="agents"
+            @relink-source="(location) => emit('relink-source', location)"
           />
         </ElTabPane>
       </ElTabs>

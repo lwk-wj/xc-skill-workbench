@@ -79,6 +79,25 @@ describe('AssetList operations', () => {
     expect(screen.getByText('未知')).toBeInTheDocument()
   })
 
+  it('labels removed sources, disables update, and keeps recovery and removal actions', async () => {
+    const user = userEvent.setup()
+    const onAction = vi.fn()
+    const unavailable = {
+      ...location,
+      status: { ...location.status, status: 'source_unavailable' as const, updateAvailable: false, reason: 'registered repository was removed' },
+    }
+    renderTestApp(AssetList, { props: {
+      ...baseProps, assets: [active], sourceKind: 'project', managementStatuses: { [active.id]: [unavailable] },
+    }, attrs: { onAction } })
+
+    expect(screen.getByText('来源已移除')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '更新 Skill One' })).toBeNull()
+    expect(screen.getByRole('button', { name: '冻结 Skill One' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '更多操作 Skill One' }))
+    expect(await screen.findByText('重新关联来源')).toBeInTheDocument()
+    expect(screen.getByText('卸载')).toBeInTheDocument()
+  })
+
   it('distinguishes an empty source from filters with no matches', async () => {
     const user = userEvent.setup()
     const empty = renderTestApp(AssetList, {

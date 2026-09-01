@@ -1587,6 +1587,215 @@ h3 {
   margin: 18px 23px 0;
 }
 
+/* Third-party repository dialog */
+
+.third-party-repository-dialog.el-dialog {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-raised);
+  box-shadow: 0 26px 80px rgb(15 23 42 / 22%);
+}
+
+.third-party-repository-dialog .el-dialog__header,
+.third-party-repository-dialog .el-dialog__footer {
+  margin: 0;
+  padding: 22px 26px;
+}
+
+.third-party-repository-dialog .el-dialog__header {
+  border-bottom: 1px solid var(--border);
+}
+
+.third-party-repository-dialog .el-dialog__body {
+  display: grid;
+  gap: 18px;
+  padding: 24px 26px 8px;
+}
+
+.third-party-repository-dialog .el-dialog__footer {
+  border-top: 0;
+}
+
+.repository-form {
+  display: grid;
+  gap: 18px;
+}
+
+.repository-form label {
+  display: grid;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.repository-form label > span {
+  margin-left: 5px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.repository-form small {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.repository-validation-result {
+  display: flex;
+  gap: 15px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--success) 30%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--success) 6%, var(--surface-raised));
+}
+
+.repository-validation-mark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--success);
+  color: white;
+  font-weight: 800;
+}
+
+.repository-validation-result strong {
+  color: var(--text-primary);
+}
+
+.repository-validation-result p {
+  margin: 4px 0 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.repository-validation-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.repository-validation-meta span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.third-party-copy-note {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-muted);
+}
+
+.source-conflict-card {
+  display: grid;
+  gap: 15px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--warning) 38%, var(--border));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--warning) 7%, var(--surface-raised));
+}
+
+.source-conflict-heading {
+  display: grid;
+  gap: 3px;
+}
+
+.source-conflict-heading span,
+.source-conflict-card dt {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.source-conflict-card dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.source-conflict-card dl > div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: baseline;
+}
+
+.source-conflict-card dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.source-conflict-card code {
+  overflow-wrap: anywhere;
+}
+
+.source-replacement-confirmed {
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.relink-source-dialog.el-dialog {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-raised);
+  box-shadow: 0 26px 80px rgb(15 23 42 / 22%);
+}
+
+.relink-source-dialog .el-dialog__header,
+.relink-source-dialog .el-dialog__body,
+.relink-source-dialog .el-dialog__footer {
+  margin: 0;
+  padding-right: 26px;
+  padding-left: 26px;
+}
+
+.relink-source-dialog .el-dialog__header { padding-top: 22px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+.relink-source-dialog .el-dialog__body { display: grid; gap: 18px; padding-top: 22px; padding-bottom: 8px; }
+.relink-source-dialog .el-dialog__footer { padding-top: 20px; padding-bottom: 22px; }
+
+.relink-source-intro {
+  display: grid;
+  gap: 6px;
+}
+
+.relink-source-intro p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.relink-source-intro code {
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.repository-candidate-state {
+  display: grid;
+  gap: 4px;
+  padding: 18px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 11px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.repository-candidate-state span { color: var(--text-tertiary); font-size: 12px; }
+.repository-candidate-select { display: grid; gap: 8px; color: var(--text-primary); font-size: 13px; font-weight: 650; }
+
 .settings-overlay,
 .operation-dialog-backdrop {
   position: fixed;

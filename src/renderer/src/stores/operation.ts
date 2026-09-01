@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import type {
   AgentDefinition, AssetRecord, InstallMethod, OperationKind, OperationPlan, OperationProgress,
   OperationRequest, OperationResult, ProjectRecord, SourceSelection,
+  SourceConflict,
 } from '../../../shared/ipc.js'
 import { plainSource } from '../app/types'
 
@@ -41,6 +42,8 @@ export const useOperationStore = defineStore('operation', () => {
   const current = ref(0)
   const progress = ref<OperationProgress | null>(null)
   const result = ref<OperationResult | null>(null)
+  const sourceConflict = ref<SourceConflict | null>(null)
+  const replaceExistingSource = ref(false)
   const cancelling = ref(false)
   let planToken = 0
   let disposeProgress: (() => void) | null = null
@@ -87,13 +90,25 @@ export const useOperationStore = defineStore('operation', () => {
         : { scope: 'global', agentId }
     })
     try {
-      const nextPlans = await Promise.all(targets.map((target) => window.xcSkills.operations.plan({
+      const requests = targets.map((target): OperationRequest => ({
         kind: kind.value,
         asset: { source: plainSource(source.value), assetId: selectedAsset.id },
         target,
         method: kind.value === 'install' || kind.value === 'update' ? method.value : null,
         overwriteModified: false,
-      })))
+        ...(replaceExistingSource.value ? { replaceExistingSource: true } : {}),
+      }))
+      const inspect = window.xcSkills.operations.inspectSourceConflict
+      const conflicts = kind.value === 'install' || kind.value === 'update'
+        ? await Promise.all(requests.map((request) => inspect ? inspect(request) : null))
+        : []
+      const conflict = conflicts.find((entry): entry is SourceConflict => entry !== null) ?? null
+      sourceConflict.value = conflict
+      if (conflict && !replaceExistingSource.value) {
+        if (token === planToken) plans.value = []
+        return
+      }
+      const nextPlans = await Promise.all(requests.map((request) => window.xcSkills.operations.plan(request)))
       if (token === planToken) plans.value = nextPlans
     } catch (cause) {
       if (token !== planToken) return
@@ -111,7 +126,7 @@ export const useOperationStore = defineStore('operation', () => {
     projects.value = input.projects
     agents.value = input.agents
     location.value = input.location ?? null
-    allowSymlink.value = input.allowSymlink ?? true
+    allowSymlink.value = input.source.kind === 'third-party' ? false : (input.allowSymlink ?? true)
     scope.value = input.location ? (input.location.projectId ? 'project' : 'global') : (input.scope ?? 'global')
     projectId.value = input.location?.projectId ?? input.projectId ?? input.projects[0]?.id
     selectedAgents.value = input.location ? [input.location.agentId] : input.agents.filter((agent) => agent.enabled).map((agent) => agent.id)
@@ -121,6 +136,8 @@ export const useOperationStore = defineStore('operation', () => {
     current.value = 0
     progress.value = null
     result.value = null
+    sourceConflict.value = null
+    replaceExistingSource.value = false
     cancelling.value = false
     onRescan = input.onRescan
     stage.value = 'preview'
@@ -132,6 +149,10 @@ export const useOperationStore = defineStore('operation', () => {
   }
 
   const confirm = (): void => { if (stage.value === 'preview' && plans.value.length) stage.value = 'confirm' }
+  const confirmSourceReplacement = async (): Promise<void> => {
+    replaceExistingSource.value = true
+    await refreshPlans()
+  }
 
   const executeAll = async (): Promise<void> => {
     if (stage.value !== 'confirm' || !plans.value.length) return
@@ -174,7 +195,8 @@ export const useOperationStore = defineStore('operation', () => {
 
   return {
     stage, kind, asset, source, projects, agents, location, allowSymlink, scope, projectId, selectedAgents, method,
-    plans, error, current, progress, result, cancelling, enabledAgents, allSteps, warnings, hasOverwrite, title, targetLabel, affectedPaths,
-    open, refreshPlans, confirm, executeAll, cancelActive, close,
+    plans, error, current, progress, result, cancelling, sourceConflict, replaceExistingSource,
+    enabledAgents, allSteps, warnings, hasOverwrite, title, targetLabel, affectedPaths,
+    open, refreshPlans, confirmSourceReplacement, confirm, executeAll, cancelActive, close,
   }
 })

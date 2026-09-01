@@ -65,4 +65,17 @@ describe('AssetInstallationStatus', () => {
     expect(screen.getByText('非仓库资源')).toBeInTheDocument()
     expect(screen.queryByText('未知')).toBeNull()
   })
+
+  it('offers relinking when an installation source was removed', async () => {
+    const user = userEvent.setup()
+    const sourceUnavailable = {
+      ...statuses[1]!,
+      installationId: 'install-1',
+      status: { ...statuses[1]!.status, status: 'source_unavailable' as const, reason: '来源仓库不可用' },
+    }
+    const view = renderTestApp(AssetInstallationStatus, { props: { asset, statuses: [sourceUnavailable], projects, agents } })
+
+    await user.click(screen.getByRole('button', { name: '重新关联来源' }))
+    expect(view.emitted()['relink-source']?.[0]).toEqual([sourceUnavailable])
+  })
 })

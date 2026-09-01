@@ -39,7 +39,8 @@ const refreshPlans = (): void => { void operation.refreshPlans() }
           </ElCheckboxGroup>
         </fieldset>
       </div>
-      <fieldset v-if="operation.kind === 'install' || operation.kind === 'update'">
+      <p v-if="operation.source.kind === 'third-party' && (operation.kind === 'install' || operation.kind === 'update')" class="operation-method-note third-party-copy-note">第三方仓库 Skill 使用复制方式安装。</p>
+      <fieldset v-else-if="operation.kind === 'install' || operation.kind === 'update'">
         <legend>安装方式</legend>
         <ElRadioGroup v-model="operation.method" aria-label="安装方式" @change="refreshPlans">
           <ElRadio value="copy">复制</ElRadio>
@@ -47,6 +48,24 @@ const refreshPlans = (): void => { void operation.refreshPlans() }
         </ElRadioGroup>
         <p v-if="!operation.allowSymlink" class="operation-method-note">当前仓库使用远程缓存，仅支持复制安装。切换为本地仓库后可使用软链接。</p>
       </fieldset>
+      <section v-if="operation.sourceConflict" class="source-conflict-card" aria-label="来源冲突">
+        <div class="source-conflict-heading">
+          <strong>目标位置已有其他来源的 Skill</strong>
+          <span>需要明确确认后才能替换来源</span>
+        </div>
+        <dl>
+          <div><dt>当前来源</dt><dd>{{ operation.sourceConflict.existing.label }}</dd></div>
+          <div><dt>新来源</dt><dd>{{ operation.sourceConflict.requested.label }}</dd></div>
+          <div><dt>目标路径</dt><dd><code>{{ operation.sourceConflict.targetPath }}</code></dd></div>
+        </dl>
+        <ElButton
+          v-if="!operation.replaceExistingSource"
+          type="primary"
+          plain
+          @click="operation.confirmSourceReplacement"
+        >使用新来源替换</ElButton>
+        <span v-else class="source-replacement-confirmed">已确认替换来源</span>
+      </section>
       <p>目标：{{ operation.targetLabel }} · {{ operation.asset?.name }}</p>
       <section v-if="operation.affectedPaths.length" aria-label="受影响路径">
         <h3>受影响路径</h3>

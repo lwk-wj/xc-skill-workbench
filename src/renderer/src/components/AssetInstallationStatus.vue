@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ElRadioButton, ElRadioGroup } from 'element-plus'
+import { ElButton, ElRadioButton, ElRadioGroup } from 'element-plus'
 import type { AgentDefinition, AssetRecord, InstallMethod, ProjectRecord } from '../../../shared/ipc.js'
 import { assetStatusLabel } from '../lib/asset-status-label'
 
@@ -16,6 +16,7 @@ const props = withDefaults(defineProps<{
   projects: () => [],
   agents: () => [],
 })
+const emit = defineEmits<{ 'relink-source': [location: StatusLocation] }>()
 
 const scopeFilter = ref<ScopeFilter>('all')
 
@@ -89,6 +90,13 @@ const groups = computed(() => {
         </div>
         <div class="status-location-state">
           <span class="status-badge" :data-status="location.status.status">{{ assetStatusLabel(location.status) }}</span>
+          <ElButton
+            v-if="location.status.status === 'source_unavailable' && location.installationId"
+            type="primary"
+            plain
+            size="small"
+            @click="emit('relink-source', location)"
+          >重新关联来源</ElButton>
         </div>
       </article>
     </section>

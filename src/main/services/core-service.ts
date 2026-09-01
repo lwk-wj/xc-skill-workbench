@@ -22,7 +22,7 @@ import {
 } from 'xc-skills/core'
 import type {
   AgentDefinition, AssetDetail, AssetRecord, AssetSelection, AssetStatusRecord as DesktopStatus,
-  DesktopState, InstallationSourceRecord, OperationPlan, OperationRequest, OperationResult, ProjectRecord, RepositoryBranch,
+  AssetStatusLocation, DesktopState, InstallationSourceRecord, OperationPlan, OperationRequest, OperationResult, ProjectRecord, RepositoryBranch,
   RepositoryConfigInput, RepositoryConfigUpdateResult, RepositoryView, SourceSelection,
   ThirdPartyRepositoryInput, ThirdPartyRepositoryView, RelinkInstallationInput, SourceConflict,
 } from '../../shared/ipc.js'
@@ -390,14 +390,14 @@ export class CoreService {
     return locations
   }
 
-  async statuses(selection: AssetSelection): Promise<Array<{ projectId: string | null; agentId: string; path: string; method: 'copy' | 'symlink' | null; status: DesktopStatus }>> {
+  async statuses(selection: AssetSelection): Promise<AssetStatusLocation[]> {
     const selected = await this.getCatalogAsset(selection)
     const key = keyFor(selection.source, selection.assetId)
     const meta = this.metadata.get(key)
-    const evaluate = async (coreAsset: CoreAsset, location: { projectId: string | null; agentId: string; path: string }) => {
+    const evaluate = async (coreAsset: CoreAsset, location: { projectId: string | null; agentId: string; path: string }, installationId: string | null = null): Promise<AssetStatusLocation> => {
       const method = await this.installMethod(location.path)
-      try { return { ...location, method, status: AssetStatusRecordSchema.parse(await this.core.evaluateAssetStatus(coreAsset, location.path)) } }
-      catch { return { ...location, method, status: unknownStatus('无法计算资产状态') } }
+      try { return { ...location, method, installationId, status: AssetStatusRecordSchema.parse(await this.core.evaluateAssetStatus(coreAsset, location.path)) } }
+      catch { return { ...location, method, installationId, status: unknownStatus('无法计算资产状态') } }
     }
 
     if (selection.source.kind === 'central' || selection.source.kind === 'third-party') {
@@ -412,7 +412,7 @@ export class CoreService {
       ? scannedLocations.map(({ asset, meta: locationMeta }) => ({ projectId: locationMeta.projectId, agentId: locationMeta.agentId ?? '', path: asset.path }))
       : [{ projectId: meta?.projectId ?? null, agentId: meta?.agentId ?? '', path: selected.path }]
     let legacyCentral: { asset: AssetRecord | null; reason: string } | null = null
-    const results = [] as Array<{ projectId: string | null; agentId: string; path: string; method: 'copy' | 'symlink' | null; status: DesktopStatus }>
+    const results: AssetStatusLocation[] = []
     for (const location of locations) {
       const method = await this.installMethod(location.path)
       const record = await this.appStore.findInstallationSourceByTarget({
@@ -424,9 +424,9 @@ export class CoreService {
       if (record) {
         try {
           const source = await this.resolveRecordedSource(record)
-          results.push(await evaluate(source.coreAsset, location))
+          results.push(await evaluate(source.coreAsset, location, record.id))
         } catch {
-          results.push({ ...location, method, status: sourceUnavailableStatus() })
+          results.push({ ...location, method, installationId: record.id, status: sourceUnavailableStatus() })
         }
         continue
       }
@@ -435,7 +435,7 @@ export class CoreService {
         catch { legacyCentral = { asset: null, reason: '中央分支不存在同名资产' } }
       }
       if (!legacyCentral.asset) {
-        results.push({ ...location, method, status: unknownStatus(legacyCentral.reason) })
+        results.push({ ...location, method, installationId: null, status: unknownStatus(legacyCentral.reason) })
         continue
       }
       const coreAsset = this.coreCatalog.get(keyFor({ kind: 'central' }, legacyCentral.asset.id)) ?? legacyCentral.asset as unknown as CoreAsset

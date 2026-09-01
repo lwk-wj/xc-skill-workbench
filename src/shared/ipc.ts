@@ -230,6 +230,14 @@ export const AssetDetailSchema = AssetRecordSchema.extend({ markdown: z.string()
 export type AssetDetail = z.infer<typeof AssetDetailSchema>
 export const AssetStatusRecordSchema = z.object({ status: z.enum(['not_installed', 'current', 'update_available', 'locally_modified', 'frozen', 'broken_link', 'conflict', 'invalid', 'unknown', 'source_unavailable']), updateAvailable: z.boolean(), locallyModified: z.boolean(), sourceHash: z.string().nullable(), installedHash: z.string().nullable(), sourceVersion: z.string().nullable(), installedVersion: z.string().nullable(), resolvedTarget: z.string().nullable(), reason: z.string() })
 export type AssetStatusRecord = z.infer<typeof AssetStatusRecordSchema>
+export type AssetStatusLocation = {
+  projectId: string | null
+  agentId: string
+  path: string
+  method: InstallMethod | null
+  installationId?: string | null
+  status: AssetStatusRecord
+}
 
 export const OperationTargetSchema = z.object({
   scope: z.enum(['project', 'global']),
@@ -297,7 +305,7 @@ export interface DesktopApi {
     refresh(id: string): Promise<ThirdPartyRepositoryView>
     relinkInstallation(input: RelinkInstallationInput): Promise<void>
   }
-  assets: { scan(source: SourceSelection): Promise<AssetRecord[]>; detail(asset: AssetSelection): Promise<AssetDetail>; statuses(asset: AssetSelection): Promise<Array<{ projectId: string | null; agentId: string; path: string; method: InstallMethod | null; status: AssetStatusRecord }>> }
+  assets: { scan(source: SourceSelection): Promise<AssetRecord[]>; detail(asset: AssetSelection): Promise<AssetDetail>; statuses(asset: AssetSelection): Promise<AssetStatusLocation[]> }
   operations: { inspectSourceConflict(input: OperationRequest): Promise<SourceConflict | null>; plan(input: OperationRequest): Promise<OperationPlan>; execute(planId: string): Promise<OperationResult>; cancel(planId: string): Promise<void>; onProgress(listener: (progress: OperationProgress) => void): () => void }
   preferences: { getTheme(): Promise<ThemePreference>; setTheme(theme: ThemePreference): Promise<void>; getLastSource(): Promise<SourceSelection> }
   system: { openExternal(url: string): Promise<void> }

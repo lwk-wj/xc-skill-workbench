@@ -52,7 +52,7 @@ const displayStatusType = (asset: AssetRecord): 'success' | 'warning' | 'danger'
   const status = locationFor(asset)?.status.status
   if (status === 'update_available' || status === 'locally_modified' || status === 'frozen') return 'warning'
   if (status === 'broken_link' || status === 'conflict' || status === 'invalid') return 'danger'
-  if (status === 'unknown') return 'info'
+  if (status === 'unknown' || status === 'source_unavailable') return 'info'
   return entryStatusType(asset.entryState)
 }
 
@@ -69,7 +69,9 @@ const primaryAction = (asset: AssetRecord): RowAction | null => {
 const overflowActions = (asset: AssetRecord): RowAction[] => {
   if (props.sourceKind === 'central' || props.sourceKind === 'third-party' || !locationFor(asset)) return []
   const primary = primaryAction(asset)
+  const status = locationFor(asset)?.status.status
   return [
+    ...(status === 'source_unavailable' ? [{ kind: 'relink-source', label: '重新关联来源' }] : []),
     ...(asset.type === 'skills' && asset.entryState === 'active' && primary?.kind !== 'freeze' ? [{ kind: 'freeze', label: '冻结' }] : []),
     { kind: 'uninstall', label: '卸载' },
   ]

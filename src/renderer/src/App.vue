@@ -6,17 +6,24 @@ import SourceSidebar from './components/SourceSidebar.vue'
 import ResourceExplorer from './components/ResourceExplorer.vue'
 import OperationDialog from './features/operations/OperationDialog.vue'
 import SettingsDialog from './features/settings/SettingsDialog.vue'
+import ThirdPartyRepositoryDialog from './features/repositories/ThirdPartyRepositoryDialog.vue'
+import RelinkSourceDialog from './features/repositories/RelinkSourceDialog.vue'
 import { useExplorerStore } from './stores/explorer'
 import { useOperationStore } from './stores/operation'
 import { usePreferencesStore } from './stores/preferences'
 import { plainSource } from './app/types'
-import type { AssetRecord, OperationKind, SourceSelection } from '../../shared/ipc.js'
+import type { AssetRecord, AssetStatusLocation, OperationKind, SourceSelection, ThirdPartyRepositoryView } from '../../shared/ipc.js'
 
 const explorer = useExplorerStore()
 const operation = useOperationStore()
 const preferences = usePreferencesStore()
 const settingsOpen = ref(false)
 const detailOpen = ref(false)
+const repositoryDialogOpen = ref(false)
+const editingRepository = ref<ThirdPartyRepositoryView | null>(null)
+const relinkDialogOpen = ref(false)
+const relinkAsset = ref<AssetRecord | null>(null)
+const relinkLocation = ref<AssetStatusLocation | null>(null)
 const assetKindMark = computed(() => ({ skills: 'SK', rules: 'RU', workflows: 'WF' })[explorer.selectedAsset?.type ?? 'skills'])
 const assetKindLabel = computed(() => ({ skills: 'Skill', rules: 'Rule', workflows: 'Workflow' })[explorer.selectedAsset?.type ?? 'skills'])
 const assetMetadata = computed(() => {
@@ -33,15 +40,24 @@ type DetailLocation = Awaited<ReturnType<NonNullable<Window['xcSkills']>['assets
 const operationKinds = new Set<OperationKind>(['install', 'update', 'uninstall', 'freeze', 'thaw'])
 const currentSource = (): SourceSelection => plainSource(explorer.selectedSource)
 const openOperation = async (requestedKind: string, asset: AssetRecord, location?: DetailLocation): Promise<void> => {
+  if (requestedKind === 'relink-source' && location) {
+    relinkAsset.value = asset
+    relinkLocation.value = location
+    relinkDialogOpen.value = true
+    return
+  }
   if (requestedKind === 'diagnose') return
   const normalized = requestedKind === 'update-with-warning' ? 'update' : requestedKind
   if (!operationKinds.has(normalized as OperationKind)) return
   let allowSymlink: boolean | undefined
   if (normalized === 'install' || normalized === 'update') {
-    try {
-      allowSymlink = (await window.xcSkills.repositories.current()).allowSymlink
-    } catch {
-      allowSymlink = false
+    if (explorer.selectedSource.kind === 'third-party') allowSymlink = false
+    else {
+      try {
+        allowSymlink = (await window.xcSkills.repositories.current()).allowSymlink
+      } catch {
+        allowSymlink = false
+      }
     }
   }
   await operation.open({
@@ -56,6 +72,23 @@ const openOperation = async (requestedKind: string, asset: AssetRecord, location
   })
 }
 
+const openRelinkSource = (location: AssetStatusLocation): void => {
+  if (!explorer.selectedAsset) return
+  relinkAsset.value = explorer.selectedAsset
+  relinkLocation.value = location
+  relinkDialogOpen.value = true
+}
+
+const addThirdPartyRepository = (): void => {
+  editingRepository.value = null
+  repositoryDialogOpen.value = true
+}
+
+const editThirdPartyRepository = (repositoryId: string): void => {
+  editingRepository.value = explorer.thirdPartyRepositories.find((entry) => entry.id === repositoryId) ?? null
+  repositoryDialogOpen.value = true
+}
+
 onMounted(() => {
   void preferences.initializeTheme()
   void explorer.initialize()
@@ -64,7 +97,11 @@ onMounted(() => {
 
 <template>
   <main class="app-shell" data-testid="app-shell">
-    <SourceSidebar @settings="settingsOpen = true" />
+    <SourceSidebar
+      @settings="settingsOpen = true"
+      @add-third-party="addThirdPartyRepository"
+      @edit-third-party="editThirdPartyRepository"
+    />
     <ResourceExplorer
       @asset-selected="detailOpen = true"
       @asset-action="openOperation"
@@ -94,9 +131,21 @@ onMounted(() => {
         :projects="explorer.projects"
         :agents="explorer.agents"
         :show-header="false"
+        @relink-source="openRelinkSource"
       />
     </ElDrawer>
     <OperationDialog />
+    <ThirdPartyRepositoryDialog
+      v-model="repositoryDialogOpen"
+      :repository="editingRepository"
+      @saved="explorer.syncThirdPartyRepository"
+    />
+    <RelinkSourceDialog
+      v-model="relinkDialogOpen"
+      :asset="relinkAsset"
+      :location="relinkLocation"
+      @relinked="explorer.refreshCurrentSource"
+    />
     <SettingsDialog
       v-model="settingsOpen"
       @agents-changed="explorer.refreshAgents()"
