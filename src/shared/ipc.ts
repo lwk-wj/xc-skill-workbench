@@ -27,12 +27,78 @@ export type AgentDefinition = z.infer<typeof AgentDefinitionSchema>
 export const ProjectRecordSchema = z.object({ id: safeId, name: safeName, path: safeAbsolutePath })
 export type ProjectRecord = z.infer<typeof ProjectRecordSchema>
 
+const LegacySourceSelectionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('central') }).strict(),
+  z.object({ kind: z.literal('global') }).strict(),
+  z.object({ kind: z.literal('project'), projectId: safeId }).strict(),
+])
 export const SourceSelectionSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('central') }),
-  z.object({ kind: z.literal('global') }),
-  z.object({ kind: z.literal('project'), projectId: safeId }),
+  z.object({ kind: z.literal('central') }).strict(),
+  z.object({ kind: z.literal('global') }).strict(),
+  z.object({ kind: z.literal('project'), projectId: safeId }).strict(),
+  z.object({ kind: z.literal('third-party'), repositoryId: safeId }).strict(),
 ])
 export type SourceSelection = z.infer<typeof SourceSelectionSchema>
+
+export const ThirdPartyRepositorySchema = z.object({
+  id: safeId,
+  name: safeName,
+  url: z.string().trim().min(1),
+  branch: z.string().trim().min(1).max(255),
+  layout: z.enum(['catalog', 'single-skill']),
+  createdAt: z.string().datetime(),
+  lastFetchedAt: z.string().datetime().nullable(),
+}).strict()
+export type ThirdPartyRepository = z.infer<typeof ThirdPartyRepositorySchema>
+
+export const ThirdPartyRepositoryInputSchema = z.object({
+  url: z.string().trim().min(1),
+  name: z.string().trim().min(1).max(200).optional(),
+  branch: z.string().trim().min(1).max(255).optional(),
+}).strict()
+export type ThirdPartyRepositoryInput = z.infer<typeof ThirdPartyRepositoryInputSchema>
+
+export const ThirdPartyRepositoryViewSchema = ThirdPartyRepositorySchema.extend({
+  skillCount: z.number().int().nonnegative(),
+  stale: z.boolean(),
+  cachedAt: z.string().datetime().nullable(),
+  lastError: z.string().nullable(),
+}).strict()
+export type ThirdPartyRepositoryView = z.infer<typeof ThirdPartyRepositoryViewSchema>
+
+const InstallationSourceSnapshotSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('central'),
+    repositoryId: z.null(),
+    repositoryName: safeName,
+    repositoryUrl: z.null(),
+  }).strict(),
+  z.object({
+    kind: z.literal('third-party'),
+    repositoryId: safeId,
+    repositoryName: safeName,
+    repositoryUrl: z.string().trim().min(1),
+  }).strict(),
+])
+export const InstallationSourceRecordSchema = z.object({
+  id: safeId,
+  scope: z.enum(['project', 'global']),
+  projectId: safeId.nullable(),
+  agentId: safeId,
+  targetPath: safeAbsolutePath,
+  asset: z.object({ type: z.literal('skills'), group: z.string(), name: safeName }).strict(),
+  source: InstallationSourceSnapshotSchema,
+  installedCommit: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u).nullable(),
+  installedHash: z.string().min(1),
+}).strict().superRefine((value, ctx) => {
+  if (value.scope === 'project' && !value.projectId) {
+    ctx.addIssue({ code: 'custom', path: ['projectId'], message: 'projectId required' })
+  }
+  if (value.scope === 'global' && value.projectId !== null) {
+    ctx.addIssue({ code: 'custom', path: ['projectId'], message: 'projectId forbidden' })
+  }
+})
+export type InstallationSourceRecord = z.infer<typeof InstallationSourceRecordSchema>
 
 export const WindowBoundsSchema = z.object({
   x: z.number().finite().optional(),
@@ -42,14 +108,27 @@ export const WindowBoundsSchema = z.object({
 })
 export type WindowBounds = z.infer<typeof WindowBoundsSchema>
 
-export const DesktopStateSchema = z.object({
+export const DesktopStateV1Schema = z.object({
   version: z.literal(1),
+  projects: z.array(ProjectRecordSchema),
+  customAgents: z.array(AgentDefinitionSchema),
+  agentEnabled: z.record(safeId, z.boolean()).default({}),
+  theme: ThemePreferenceSchema,
+  lastSource: LegacySourceSelectionSchema,
+  windowBounds: WindowBoundsSchema.nullable(),
+})
+export type DesktopStateV1 = z.infer<typeof DesktopStateV1Schema>
+
+export const DesktopStateSchema = z.object({
+  version: z.literal(2),
   projects: z.array(ProjectRecordSchema),
   customAgents: z.array(AgentDefinitionSchema),
   agentEnabled: z.record(safeId, z.boolean()).default({}),
   theme: ThemePreferenceSchema,
   lastSource: SourceSelectionSchema,
   windowBounds: WindowBoundsSchema.nullable(),
+  thirdPartyRepositories: z.array(ThirdPartyRepositorySchema),
+  installationSources: z.array(InstallationSourceRecordSchema),
 })
 export type DesktopState = z.infer<typeof DesktopStateSchema>
 
@@ -122,7 +201,7 @@ export const AssetRecordSchema = z.object({
 export type AssetRecord = z.infer<typeof AssetRecordSchema>
 export const AssetDetailSchema = AssetRecordSchema.extend({ markdown: z.string().nullable(), evolution: z.string().nullable(), files: z.array(z.object({ relativePath: z.string(), size: z.number().int().nonnegative(), kind: z.enum(['text', 'binary']) })) })
 export type AssetDetail = z.infer<typeof AssetDetailSchema>
-export const AssetStatusRecordSchema = z.object({ status: z.enum(['not_installed', 'current', 'update_available', 'locally_modified', 'frozen', 'broken_link', 'conflict', 'invalid', 'unknown']), updateAvailable: z.boolean(), locallyModified: z.boolean(), sourceHash: z.string().nullable(), installedHash: z.string().nullable(), sourceVersion: z.string().nullable(), installedVersion: z.string().nullable(), resolvedTarget: z.string().nullable(), reason: z.string() })
+export const AssetStatusRecordSchema = z.object({ status: z.enum(['not_installed', 'current', 'update_available', 'locally_modified', 'frozen', 'broken_link', 'conflict', 'invalid', 'unknown', 'source_unavailable']), updateAvailable: z.boolean(), locallyModified: z.boolean(), sourceHash: z.string().nullable(), installedHash: z.string().nullable(), sourceVersion: z.string().nullable(), installedVersion: z.string().nullable(), resolvedTarget: z.string().nullable(), reason: z.string() })
 export type AssetStatusRecord = z.infer<typeof AssetStatusRecordSchema>
 
 export const OperationTargetSchema = z.object({
@@ -188,4 +267,14 @@ export const Channels = {
 /** Stable alias for Main/Preload consumers that prefer an explicit channel namespace. */
 export const IPC_CHANNELS = Channels
 
-export const DesktopStateDefaults: DesktopState = { version: 1, projects: [], customAgents: [], agentEnabled: {}, theme: 'system', lastSource: { kind: 'central' }, windowBounds: null }
+export const DesktopStateDefaults: DesktopState = {
+  version: 2,
+  projects: [],
+  customAgents: [],
+  agentEnabled: {},
+  theme: 'system',
+  lastSource: { kind: 'central' },
+  windowBounds: null,
+  thirdPartyRepositories: [],
+  installationSources: [],
+}

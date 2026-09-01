@@ -10,6 +10,7 @@ const labels: Record<AssetStatusRecord['status'], string> = {
   conflict: '冲突',
   invalid: '无效',
   unknown: '未知',
+  source_unavailable: '来源已移除',
 }
 
 export const assetStatusLabel = (status: AssetStatusRecord): string => {

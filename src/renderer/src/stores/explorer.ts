@@ -13,6 +13,7 @@ const projectSource = (project: ProjectRecord): ExplorerSource => ({
 const sourceFromSelection = (selection: SourceSelection, projects: ProjectRecord[]): ExplorerSource => {
   if (selection.kind === 'central') return central
   if (selection.kind === 'global') return globalSource
+  if (selection.kind === 'third-party') return central
   const project = projects.find((entry) => entry.id === selection.projectId)
   return project ? projectSource(project) : central
 }

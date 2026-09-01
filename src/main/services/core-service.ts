@@ -240,6 +240,7 @@ export class CoreService {
       result.push(...await this.scanRoot(source, repo.root, null, null))
       return result
     }
+    if (source.kind === 'third-party') throw new Error('third-party repository service is not available')
     const state = await this.appStore.read()
     const project = source.kind === 'project' ? state.projects.find((entry) => entry.id === source.projectId) : null
     if (source.kind === 'project' && !project) return []

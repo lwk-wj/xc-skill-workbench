@@ -8,10 +8,15 @@ import {
   DesktopState,
   DesktopStateDefaults,
   DesktopStateSchema,
+  DesktopStateV1Schema,
+  InstallationSourceRecord,
+  InstallationSourceRecordSchema,
   ProjectRecord,
   ProjectRecordSchema,
   SourceSelection,
   SourceSelectionSchema,
+  ThirdPartyRepository,
+  ThirdPartyRepositorySchema,
   ThemePreference,
   ThemePreferenceSchema,
   WindowBounds,
@@ -23,6 +28,9 @@ const isWithin = (parent: string, child: string): boolean => {
   return rel === '' || (rel !== '..' && !rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) && !isAbsolute(rel))
 }
 
+const installationTargetKey = (record: Pick<InstallationSourceRecord, 'scope' | 'projectId' | 'agentId' | 'targetPath'>): string =>
+  JSON.stringify([record.scope, record.projectId, record.agentId, record.targetPath])
+
 export class AppStore {
   private readonly absoluteFilePath: string
 
@@ -33,7 +41,15 @@ export class AppStore {
   async read(): Promise<DesktopState> {
     try {
       const raw = await readFile(this.absoluteFilePath, 'utf8')
-      const state = DesktopStateSchema.parse(JSON.parse(raw))
+      const parsed = z.union([DesktopStateSchema, DesktopStateV1Schema]).parse(JSON.parse(raw))
+      const state: DesktopState = parsed.version === 1
+        ? {
+            ...parsed,
+            version: 2,
+            thirdPartyRepositories: [],
+            installationSources: [],
+          }
+        : parsed
       const ids = new Set<string>()
       const paths = new Set<string>()
       const canonicalProjects: ProjectRecord[] = []
@@ -52,7 +68,38 @@ export class AppStore {
         if (agentIds.has(agent.id)) throw new Error('state contains duplicate Agent')
         agentIds.add(agent.id)
       }
-      return { ...state, projects: canonicalProjects }
+      const repositoryIds = new Set<string>()
+      const repositorySources = new Set<string>()
+      for (const repository of state.thirdPartyRepositories) {
+        const sourceKey = JSON.stringify([repository.url, repository.branch])
+        if (repositoryIds.has(repository.id)) throw new Error('state contains duplicate repository id')
+        if (repositorySources.has(sourceKey)) throw new Error('state contains duplicate repository source')
+        repositoryIds.add(repository.id)
+        repositorySources.add(sourceKey)
+      }
+      const installationIds = new Set<string>()
+      const installationTargets = new Set<string>()
+      const canonicalInstallations: InstallationSourceRecord[] = []
+      for (const record of state.installationSources) {
+        const targetPath = await realpath(record.targetPath).catch(() => resolve(record.targetPath))
+        const normalized = { ...record, targetPath }
+        const targetKey = installationTargetKey(normalized)
+        if (installationIds.has(record.id)) throw new Error('state contains duplicate installation source id')
+        if (installationTargets.has(targetKey)) throw new Error('state contains duplicate installation target')
+        installationIds.add(record.id)
+        installationTargets.add(targetKey)
+        canonicalInstallations.push(normalized)
+      }
+      const lastSource = state.lastSource.kind === 'third-party'
+        && !repositoryIds.has(state.lastSource.repositoryId)
+        ? { kind: 'central' as const }
+        : state.lastSource
+      return {
+        ...state,
+        projects: canonicalProjects,
+        installationSources: canonicalInstallations,
+        lastSource,
+      }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return structuredClone(DesktopStateDefaults)
       if (error instanceof SyntaxError || error instanceof z.ZodError) throw error
@@ -143,7 +190,12 @@ export class AppStore {
 
   async setLastSource(source: SourceSelection): Promise<void> {
     const parsed = SourceSelectionSchema.parse(source)
-    await this.update((state) => ({ ...state, lastSource: parsed }))
+    await this.update((state) => {
+      if (parsed.kind === 'third-party' && !state.thirdPartyRepositories.some((repository) => repository.id === parsed.repositoryId)) {
+        throw new Error('unknown third-party repository id')
+      }
+      return { ...state, lastSource: parsed }
+    })
   }
 
   async getLastSource(): Promise<SourceSelection> { return (await this.read()).lastSource }
@@ -154,4 +206,68 @@ export class AppStore {
   }
 
   async getWindowBounds(): Promise<WindowBounds | null> { return (await this.read()).windowBounds }
+
+  async listThirdPartyRepositories(): Promise<ThirdPartyRepository[]> {
+    return (await this.read()).thirdPartyRepositories
+  }
+
+  async saveThirdPartyRepository(repository: ThirdPartyRepository): Promise<ThirdPartyRepository[]> {
+    const parsed = ThirdPartyRepositorySchema.parse(repository)
+    return (await this.update((state) => {
+      const duplicate = state.thirdPartyRepositories.find((entry) =>
+        entry.id !== parsed.id && entry.url === parsed.url && entry.branch === parsed.branch)
+      if (duplicate) throw new Error('duplicate repository source')
+      const index = state.thirdPartyRepositories.findIndex((entry) => entry.id === parsed.id)
+      if (index < 0) return { ...state, thirdPartyRepositories: [...state.thirdPartyRepositories, parsed] }
+      const thirdPartyRepositories = [...state.thirdPartyRepositories]
+      thirdPartyRepositories[index] = parsed
+      return { ...state, thirdPartyRepositories }
+    })).thirdPartyRepositories
+  }
+
+  async removeThirdPartyRepository(id: string): Promise<void> {
+    const parsed = z.string().min(1).parse(id)
+    await this.update((state) => ({
+      ...state,
+      thirdPartyRepositories: state.thirdPartyRepositories.filter((repository) => repository.id !== parsed),
+      lastSource: state.lastSource.kind === 'third-party' && state.lastSource.repositoryId === parsed
+        ? { kind: 'central' }
+        : state.lastSource,
+    }))
+  }
+
+  async listInstallationSources(): Promise<InstallationSourceRecord[]> {
+    return (await this.read()).installationSources
+  }
+
+  async upsertInstallationSource(record: InstallationSourceRecord): Promise<void> {
+    const parsed = InstallationSourceRecordSchema.parse(record)
+    const targetPath = await realpath(parsed.targetPath).catch(() => resolve(parsed.targetPath))
+    const normalized = { ...parsed, targetPath }
+    await this.update((state) => {
+      const targetKey = installationTargetKey(normalized)
+      if (state.installationSources.some((entry) => entry.id !== normalized.id && installationTargetKey(entry) === targetKey)) {
+        throw new Error('duplicate installation target')
+      }
+      const index = state.installationSources.findIndex((entry) => entry.id === normalized.id)
+      if (index < 0) return { ...state, installationSources: [...state.installationSources, normalized] }
+      const installationSources = [...state.installationSources]
+      installationSources[index] = normalized
+      return { ...state, installationSources }
+    })
+  }
+
+  async removeInstallationSource(id: string): Promise<void> {
+    const parsed = z.string().min(1).parse(id)
+    await this.update((state) => ({
+      ...state,
+      installationSources: state.installationSources.filter((record) => record.id !== parsed),
+    }))
+  }
+
+  async findInstallationSourceByTarget(input: Pick<InstallationSourceRecord, 'scope' | 'projectId' | 'agentId' | 'targetPath'>): Promise<InstallationSourceRecord | null> {
+    const targetPath = await realpath(input.targetPath).catch(() => resolve(input.targetPath))
+    const key = installationTargetKey({ ...input, targetPath })
+    return (await this.read()).installationSources.find((record) => installationTargetKey(record) === key) ?? null
+  }
 }

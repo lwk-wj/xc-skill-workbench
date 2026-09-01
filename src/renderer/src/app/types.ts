@@ -6,4 +6,6 @@ export type ExplorerSource = SourceSelection & { id: string; label: string; path
 /** Strip Vue/Pinia proxies and explorer-only fields before crossing Electron IPC. */
 export const plainSource = (source: SourceSelection): SourceSelection => source.kind === 'project'
   ? { kind: 'project', projectId: source.projectId }
-  : { kind: source.kind }
+  : source.kind === 'third-party'
+    ? { kind: 'third-party', repositoryId: source.repositoryId }
+    : { kind: source.kind }

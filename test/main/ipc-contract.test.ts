@@ -4,6 +4,10 @@ import {
   CustomAgentDirectorySchema,
   OperationRequestSchema,
   RepositoryConfigInputSchema,
+  ThirdPartyRepositoryInputSchema,
+  ThirdPartyRepositoryViewSchema,
+  SourceSelectionSchema,
+  AssetStatusRecordSchema,
   ThemePreferenceSchema,
   ExternalUrlSchema,
 } from '../../src/shared/ipc.js'
@@ -35,6 +39,26 @@ describe('IPC contracts', () => {
   it('rejects non-http external URLs and invalid themes', () => {
     expect(() => ExternalUrlSchema.parse('file:///etc/passwd')).toThrow()
     expect(() => ThemePreferenceSchema.parse('solarized')).toThrow()
+  })
+
+  it('defines strict third-party repository, source, and unavailable-status contracts', () => {
+    expect(ThirdPartyRepositoryInputSchema.parse({
+      url: ' https://example.com/team/skills.git ',
+      name: ' Team Skills ',
+      branch: ' trunk ',
+    })).toEqual({ url: 'https://example.com/team/skills.git', name: 'Team Skills', branch: 'trunk' })
+    expect(() => ThirdPartyRepositoryInputSchema.parse({ url: 'https://example.com/skills.git', cacheRoot: '/tmp/forged' })).toThrow()
+    expect(SourceSelectionSchema.parse({ kind: 'third-party', repositoryId: 'repo-1' })).toEqual({ kind: 'third-party', repositoryId: 'repo-1' })
+    expect(ThirdPartyRepositoryViewSchema.parse({
+      id: 'repo-1', name: 'Team Skills', url: 'https://example.com/skills.git', branch: 'trunk', layout: 'catalog',
+      createdAt: '2026-09-01T00:00:00.000Z', lastFetchedAt: null,
+      skillCount: 2, stale: false, cachedAt: null, lastError: null,
+    })).not.toHaveProperty('cacheRoot')
+    expect(AssetStatusRecordSchema.parse({
+      status: 'source_unavailable', updateAvailable: false, locallyModified: false,
+      sourceHash: null, installedHash: 'hash', sourceVersion: null, installedVersion: null,
+      resolvedTarget: '/tmp/skill', reason: 'repository removed',
+    }).status).toBe('source_unavailable')
   })
 
   it('normalizes editable repository configuration without dropping inactive sources', () => {
