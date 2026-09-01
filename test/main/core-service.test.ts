@@ -1,11 +1,152 @@
-import { mkdtemp, mkdir, readFile, writeFile, rm, realpath, symlink } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdtemp, mkdir, readFile, writeFile, rm, realpath, symlink, lstat, readdir } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { AppStore } from '../../src/main/services/app-store.js'
 import { CoreService } from '../../src/main/services/core-service.js'
 
 describe('CoreService', () => {
+  it('manages install, freeze, thaw, and uninstall through the shared asset manifest', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-managed-lifecycle-'))
+    const repositoryRoot = join(root, 'repository')
+    const skillRoot = join(repositoryRoot, 'skills', 'demo')
+    const targetRoot = join(root, 'agent', 'skills')
+    const assetStorePath = join(root, 'store')
+    const configPath = join(root, 'config.json')
+    await mkdir(skillRoot, { recursive: true })
+    await writeFile(join(skillRoot, 'SKILL.md'), '---\ndescription: Managed demo\n---\n\n# Demo\n')
+    await writeFile(configPath, JSON.stringify({ mode: 'local', repoPath: repositoryRoot, defaultBranch: 'main', assetStorePath }))
+    const agent = { id: 'codex', name: 'Codex', projectBaseDir: '.codex', globalBaseDir: join(root, 'agent'), assetDirs: { skills: 'skills', rules: 'rules', workflows: 'workflows' }, builtIn: true, enabled: true }
+    const service = new CoreService({
+      appStore: new AppStore(join(root, 'state.json')),
+      configPath,
+      cacheRoot: join(root, 'cache'),
+      core: {
+        BUILTIN_AGENTS: [agent],
+        resolveAgentAssetRoot: (_agent, _scope, _base, type) => join(root, 'agent', type),
+        resolveRepositorySource: async () => ({ root: repositoryRoot, branch: 'main', commit: 'a'.repeat(40), kind: 'local-worktree', allowSymlink: true, stale: false, cachedAt: null }),
+      },
+    })
+
+    const [catalogAsset] = await service.scan({ kind: 'central' })
+    const installPlan = await service.plan({ kind: 'install', asset: { source: { kind: 'central' }, assetId: catalogAsset!.id }, target: { scope: 'global', agentId: 'codex' }, method: 'symlink' })
+    await expect(service.execute(installPlan.id)).resolves.toMatchObject({ status: 'completed' })
+    const targetPath = join(targetRoot, 'demo')
+    expect((await lstat(targetPath)).isSymbolicLink()).toBe(true)
+    expect(await realpath(targetPath)).toContain('/store/entities/')
+
+    await writeFile(join(skillRoot, 'SKILL.md'), '---\ndescription: Managed demo v2\n---\n\n# Demo v2\n')
+    const [refreshedAsset] = await service.scan({ kind: 'central' })
+    const refreshedStatus = (await service.statuses({ source: { kind: 'central' }, assetId: refreshedAsset!.id }))
+      .find((location) => location.path === targetPath)
+    expect(refreshedStatus?.status).toMatchObject({ status: 'update_available', updateAvailable: true })
+    expect(await readFile(join(targetPath, 'SKILL.md'), 'utf8')).toContain('# Demo\n')
+    expect(await readFile(join(targetPath, 'SKILL.md'), 'utf8')).not.toContain('# Demo v2')
+
+    const updatePlan = await service.plan({ kind: 'update', asset: { source: { kind: 'central' }, assetId: refreshedAsset!.id }, target: { scope: 'global', agentId: 'codex' }, method: 'symlink' })
+    expect(updatePlan.warnings.join('\n')).toContain(targetPath)
+    await service.execute(updatePlan.id)
+    expect(await readFile(join(targetPath, 'SKILL.md'), 'utf8')).toContain('# Demo v2')
+    const updatedManifest = JSON.parse(await readFile(join(root, '.xc-skills-managed-assets.json'), 'utf8'))
+    expect(updatedManifest.assets).toHaveLength(1)
+    expect(updatedManifest.installations).toHaveLength(1)
+
+    const [installed] = await service.scan({ kind: 'global' })
+    const freezePlan = await service.plan({ kind: 'freeze', asset: { source: { kind: 'global' }, assetId: installed!.id }, target: { scope: 'global', agentId: 'codex' }, method: null })
+    await service.execute(freezePlan.id)
+    await expect(lstat(targetPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    const [frozen] = await service.scan({ kind: 'global' })
+    expect(frozen).toMatchObject({ name: 'demo', entryState: 'frozen' })
+
+    const thawPlan = await service.plan({ kind: 'thaw', asset: { source: { kind: 'global' }, assetId: frozen!.id }, target: { scope: 'global', agentId: 'codex' }, method: null })
+    await service.execute(thawPlan.id)
+    expect((await lstat(targetPath)).isSymbolicLink()).toBe(true)
+
+    const uninstallPlan = await service.plan({ kind: 'uninstall', asset: { source: { kind: 'global' }, assetId: frozen!.id }, target: { scope: 'global', agentId: 'codex' }, method: null })
+    await service.execute(uninstallPlan.id)
+    await expect(lstat(targetPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readdir(join(assetStorePath, 'entities'))).resolves.toEqual([])
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it('requires confirmation before updating a locally modified managed copy', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-managed-copy-'))
+    const repositoryRoot = join(root, 'repository')
+    const skillRoot = join(repositoryRoot, 'skills', 'demo')
+    const targetRoot = join(root, 'agent', 'skills')
+    const configPath = join(root, 'config.json')
+    await mkdir(skillRoot, { recursive: true })
+    await writeFile(join(skillRoot, 'SKILL.md'), '---\ndescription: Managed copy\n---\n\n# Repository\n')
+    await writeFile(configPath, JSON.stringify({ mode: 'local', repoPath: repositoryRoot, defaultBranch: 'main', assetStorePath: join(root, 'store') }))
+    const agent = { id: 'codex', name: 'Codex', projectBaseDir: '.codex', globalBaseDir: join(root, 'agent'), assetDirs: { skills: 'skills', rules: 'rules', workflows: 'workflows' }, builtIn: true, enabled: true }
+    const service = new CoreService({
+      appStore: new AppStore(join(root, 'state.json')),
+      configPath,
+      cacheRoot: join(root, 'cache'),
+      core: {
+        BUILTIN_AGENTS: [agent],
+        resolveAgentAssetRoot: (_agent, _scope, _base, type) => join(root, 'agent', type),
+        resolveRepositorySource: async () => ({ root: repositoryRoot, branch: 'main', commit: 'a'.repeat(40), kind: 'local-worktree', allowSymlink: true, stale: false, cachedAt: null }),
+      },
+    })
+
+    const [catalogAsset] = await service.scan({ kind: 'central' })
+    const installPlan = await service.plan({ kind: 'install', asset: { source: { kind: 'central' }, assetId: catalogAsset!.id }, target: { scope: 'global', agentId: 'codex' }, method: 'copy' })
+    await service.execute(installPlan.id)
+    const targetPath = join(targetRoot, 'demo')
+    await writeFile(join(targetPath, 'SKILL.md'), '# Local changes\n')
+    const [installed] = await service.scan({ kind: 'global' })
+    const updatePlan = await service.plan({ kind: 'update', asset: { source: { kind: 'global' }, assetId: installed!.id }, target: { scope: 'global', agentId: 'codex' }, method: 'copy', overwriteModified: false })
+
+    expect(updatePlan.requiresOverwriteConfirmation).toBe(true)
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it('previews and transactionally migrates legacy installation records', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-legacy-migration-'))
+    const repositoryRoot = join(root, 'repository')
+    const sourcePath = join(repositoryRoot, 'skills', 'demo')
+    const targetPath = join(root, 'agent', 'skills', 'demo')
+    const configPath = join(root, 'config.json')
+    await mkdir(sourcePath, { recursive: true })
+    await mkdir(targetPath, { recursive: true })
+    await writeFile(join(sourcePath, 'SKILL.md'), '---\ndescription: Repository\n---\n\n# Repository\n')
+    await writeFile(join(targetPath, 'SKILL.md'), '---\ndescription: Installed snapshot\n---\n\n# Installed snapshot\n')
+    await writeFile(configPath, JSON.stringify({ mode: 'local', repoPath: repositoryRoot, defaultBranch: 'main', assetStorePath: join(root, 'store') }))
+    const appStore = new AppStore(join(root, 'state.json'))
+    await appStore.upsertInstallationSource({
+      id: 'legacy-1', scope: 'global', projectId: null, agentId: 'codex', targetPath,
+      asset: { type: 'skills', group: '', name: 'demo' },
+      source: { kind: 'central', repositoryId: null, repositoryName: '中央仓库', repositoryUrl: null },
+      installedCommit: null, installedHash: 'legacy-hash', method: 'symlink', frozen: false,
+    })
+    const agent = { id: 'codex', name: 'Codex', projectBaseDir: '.codex', globalBaseDir: join(root, 'agent'), assetDirs: { skills: 'skills', rules: 'rules', workflows: 'workflows' }, builtIn: true, enabled: true }
+    const service = new CoreService({
+      appStore,
+      configPath,
+      cacheRoot: join(root, 'cache'),
+      core: {
+        BUILTIN_AGENTS: [agent],
+        resolveAgentAssetRoot: (_agent, _scope, _base, type) => join(root, 'agent', type),
+        resolveRepositorySource: async () => ({ root: repositoryRoot, branch: 'main', commit: 'a'.repeat(40), kind: 'local-worktree', allowSymlink: true, stale: false, cachedAt: null }),
+      },
+    })
+
+    const preview = await service.previewLegacyInstallationMigration()
+    expect(preview).toMatchObject({
+      candidates: [{ recordId: 'legacy-1', method: 'symlink', sourceLabel: '中央仓库' }],
+      conflicts: [],
+    })
+    const remaining = await service.executeLegacyInstallationMigration(preview.token)
+
+    expect(remaining.candidates).toEqual([])
+    expect(await appStore.listInstallationSources()).toEqual([])
+    expect((await lstat(targetPath)).isSymbolicLink()).toBe(true)
+    expect(await readFile(join(targetPath, 'SKILL.md'), 'utf8')).toContain('# Installed snapshot')
+    await expect(service.executeLegacyInstallationMigration(preview.token)).rejects.toThrow(/unknown or expired/)
+    await rm(root, { recursive: true, force: true })
+  })
+
   it('exposes cached repository capabilities without forcing another resolution', async () => {
     const root = await mkdtemp(join(tmpdir(), 'xc-desktop-current-repository-'))
     const resolveRepositorySource = vi.fn(async () => ({
@@ -289,6 +430,7 @@ describe('CoreService', () => {
       repoPath: newRoot,
       defaultBranch: 'main',
       defaultGroups: [],
+      assetStorePath: join(homedir(), '.xc-skills', 'store'),
     })
     await rm(root, { recursive: true, force: true })
   })

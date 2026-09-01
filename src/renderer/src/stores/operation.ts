@@ -126,7 +126,7 @@ export const useOperationStore = defineStore('operation', () => {
     projects.value = input.projects
     agents.value = input.agents
     location.value = input.location ?? null
-    allowSymlink.value = input.source.kind === 'third-party' ? false : (input.allowSymlink ?? true)
+    allowSymlink.value = input.allowSymlink ?? true
     scope.value = input.location ? (input.location.projectId ? 'project' : 'global') : (input.scope ?? 'global')
     projectId.value = input.location?.projectId ?? input.projectId ?? input.projects[0]?.id
     selectedAgents.value = input.location ? [input.location.agentId] : input.agents.filter((agent) => agent.enabled).map((agent) => agent.id)

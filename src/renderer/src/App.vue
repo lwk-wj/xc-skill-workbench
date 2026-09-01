@@ -51,14 +51,9 @@ const openOperation = async (requestedKind: string, asset: AssetRecord, location
   if (!operationKinds.has(normalized as OperationKind)) return
   let allowSymlink: boolean | undefined
   if (normalized === 'install' || normalized === 'update') {
-    if (explorer.selectedSource.kind === 'third-party') allowSymlink = false
-    else {
-      try {
-        allowSymlink = (await window.xcSkills.repositories.current()).allowSymlink
-      } catch {
-        allowSymlink = false
-      }
-    }
+    // All repositories import into the stable local entity store first, so the
+    // Agent-facing link never points at an ephemeral repository checkout.
+    allowSymlink = true
   }
   await operation.open({
     kind: normalized as OperationKind,

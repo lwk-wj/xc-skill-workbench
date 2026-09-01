@@ -141,10 +141,13 @@ export const InstallationSourceRecordSchema = z.object({
   projectId: safeId.nullable(),
   agentId: safeId,
   targetPath: safeAbsolutePath,
-  asset: z.object({ type: z.literal('skills'), group: z.string(), name: safeName }).strict(),
+  asset: z.object({ type: z.enum(['skills', 'rules', 'workflows']), group: z.string(), name: safeName }).strict(),
   source: InstallationSourceSnapshotSchema,
   installedCommit: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u).nullable(),
   installedHash: z.string().min(1),
+  managedAssetId: z.string().regex(/^[0-9a-f]{64}$/u).nullable().optional(),
+  method: z.enum(['copy', 'symlink']).optional(),
+  frozen: z.boolean().optional(),
 }).strict().superRefine((value, ctx) => {
   if (value.scope === 'project' && !value.projectId) {
     ctx.addIssue({ code: 'custom', path: ['projectId'], message: 'projectId required' })
@@ -174,7 +177,7 @@ export const DesktopStateV1Schema = z.object({
 })
 export type DesktopStateV1 = z.infer<typeof DesktopStateV1Schema>
 
-export const DesktopStateSchema = z.object({
+export const DesktopStateV2Schema = z.object({
   version: z.literal(2),
   projects: z.array(ProjectRecordSchema),
   customAgents: z.array(AgentDefinitionSchema),
@@ -184,6 +187,18 @@ export const DesktopStateSchema = z.object({
   windowBounds: WindowBoundsSchema.nullable(),
   thirdPartyRepositories: z.array(ThirdPartyRepositorySchema),
   installationSources: z.array(InstallationSourceRecordSchema),
+})
+export type DesktopStateV2 = z.infer<typeof DesktopStateV2Schema>
+export const DesktopStateSchema = z.object({
+  version: z.literal(3),
+  projects: z.array(ProjectRecordSchema),
+  customAgents: z.array(AgentDefinitionSchema),
+  agentEnabled: z.record(safeId, z.boolean()).default({}),
+  theme: ThemePreferenceSchema,
+  lastSource: SourceSelectionSchema,
+  windowBounds: WindowBoundsSchema.nullable(),
+  thirdPartyRepositories: z.array(ThirdPartyRepositorySchema),
+  legacyInstallationSources: z.array(InstallationSourceRecordSchema),
 })
 export type DesktopState = z.infer<typeof DesktopStateSchema>
 
@@ -215,6 +230,7 @@ export const XcSkillsConfigSchema = z.object({
   remoteUrl: z.string().optional(),
   defaultBranch: z.string().optional(),
   defaultGroups: z.array(z.string()).optional(),
+  assetStorePath: safeAbsolutePath.optional(),
 }).passthrough()
 export type XcSkillsConfig = z.infer<typeof XcSkillsConfigSchema>
 const NormalizedRepositoryGroupsSchema = z.array(z.string()).transform((groups) =>
@@ -226,6 +242,7 @@ export const RepositoryConfigInputSchema = z.object({
   remoteUrl: z.string().trim(),
   defaultBranch: z.string().trim().min(1, 'default branch required').max(255),
   defaultGroups: NormalizedRepositoryGroupsSchema,
+  assetStorePath: safeAbsolutePath.optional(),
 }).strict().superRefine((value, ctx) => {
   if (value.mode === 'local' && !value.repoPath) {
     ctx.addIssue({ code: 'custom', path: ['repoPath'], message: 'local repository path required' })
@@ -235,6 +252,29 @@ export const RepositoryConfigInputSchema = z.object({
   }
 })
 export type RepositoryConfigInput = z.infer<typeof RepositoryConfigInputSchema>
+export const AssetStoreMigrationPreviewSchema = z.object({
+  token: safeId,
+  fromPath: safeAbsolutePath,
+  toPath: safeAbsolutePath,
+  entityCount: z.number().int().nonnegative(),
+  symlinkTargets: z.array(safeAbsolutePath),
+  copyTargets: z.array(safeAbsolutePath),
+  conflicts: z.array(z.object({ path: safeAbsolutePath, reason: z.string().min(1) }).strict()),
+  expiresAt: z.string().datetime(),
+}).strict()
+export type AssetStoreMigrationPreview = z.infer<typeof AssetStoreMigrationPreviewSchema>
+export const LegacyInstallationMigrationPreviewSchema = z.object({
+  token: safeId,
+  candidates: z.array(z.object({
+    recordId: safeId,
+    targetPath: safeAbsolutePath,
+    sourceLabel: z.string().min(1),
+    method: z.enum(['copy', 'symlink']),
+  }).strict()),
+  conflicts: z.array(z.object({ recordId: safeId, targetPath: safeAbsolutePath, reason: z.string().min(1) }).strict()),
+  expiresAt: z.string().datetime(),
+}).strict()
+export type LegacyInstallationMigrationPreview = z.infer<typeof LegacyInstallationMigrationPreviewSchema>
 export const RepositoryConfigUpdateResultSchema = z.object({
   config: XcSkillsConfigSchema,
   repository: RepositoryViewSchema,
@@ -319,6 +359,11 @@ export interface DesktopApi {
     getConfig(): Promise<XcSkillsConfig>
     current(): Promise<RepositoryView>
     chooseLocalPath(): Promise<string | null>
+    chooseAssetStorePath(): Promise<string | null>
+    previewAssetStoreMigration(path: string): Promise<AssetStoreMigrationPreview>
+    executeAssetStoreMigration(token: string): Promise<XcSkillsConfig>
+    previewLegacyInstallationMigration(): Promise<LegacyInstallationMigrationPreview>
+    executeLegacyInstallationMigration(token: string): Promise<LegacyInstallationMigrationPreview>
     updateConfig(input: RepositoryConfigInput): Promise<RepositoryConfigUpdateResult>
     listBranches(): Promise<RepositoryBranch[]>
     selectBranch(branch: string): Promise<RepositoryView>
@@ -342,7 +387,7 @@ export interface DesktopApi {
 export const Channels = {
   projectsList: 'projects:list', projectsChooseAndAdd: 'projects:chooseAndAdd', projectsRemove: 'projects:remove',
   agentsList: 'agents:list', agentsSetEnabled: 'agents:setEnabled', agentsSaveCustom: 'agents:saveCustom', agentsRemoveCustom: 'agents:removeCustom',
-  repositoriesGetConfig: 'repositories:getConfig', repositoriesCurrent: 'repositories:current', repositoriesChooseLocalPath: 'repositories:chooseLocalPath', repositoriesUpdateConfig: 'repositories:updateConfig', repositoriesListBranches: 'repositories:listBranches', repositoriesSelectBranch: 'repositories:selectBranch', repositoriesSetDefaultBranch: 'repositories:setDefaultBranch', repositoriesRefresh: 'repositories:refresh',
+  repositoriesGetConfig: 'repositories:getConfig', repositoriesCurrent: 'repositories:current', repositoriesChooseLocalPath: 'repositories:chooseLocalPath', repositoriesChooseAssetStorePath: 'repositories:chooseAssetStorePath', repositoriesPreviewAssetStoreMigration: 'repositories:previewAssetStoreMigration', repositoriesExecuteAssetStoreMigration: 'repositories:executeAssetStoreMigration', repositoriesPreviewLegacyInstallationMigration: 'repositories:previewLegacyInstallationMigration', repositoriesExecuteLegacyInstallationMigration: 'repositories:executeLegacyInstallationMigration', repositoriesUpdateConfig: 'repositories:updateConfig', repositoriesListBranches: 'repositories:listBranches', repositoriesSelectBranch: 'repositories:selectBranch', repositoriesSetDefaultBranch: 'repositories:setDefaultBranch', repositoriesRefresh: 'repositories:refresh',
   thirdPartyRepositoriesList: 'third-party-repositories:list', thirdPartyRepositoriesAdd: 'third-party-repositories:add', thirdPartyRepositoriesUpdate: 'third-party-repositories:update', thirdPartyRepositoriesRemove: 'third-party-repositories:remove', thirdPartyRepositoriesRefresh: 'third-party-repositories:refresh',
   thirdPartyRepositoriesRelinkInstallation: 'third-party-repositories:relinkInstallation',
   assetsScan: 'assets:scan', assetsDetail: 'assets:detail', assetsStatuses: 'assets:statuses',
@@ -353,7 +398,7 @@ export const Channels = {
 export const IPC_CHANNELS = Channels
 
 export const DesktopStateDefaults: DesktopState = {
-  version: 2,
+  version: 3,
   projects: [],
   customAgents: [],
   agentEnabled: {},
@@ -361,5 +406,5 @@ export const DesktopStateDefaults: DesktopState = {
   lastSource: { kind: 'central' },
   windowBounds: null,
   thirdPartyRepositories: [],
-  installationSources: [],
+  legacyInstallationSources: [],
 }

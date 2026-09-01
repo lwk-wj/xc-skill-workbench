@@ -175,6 +175,47 @@ describe('IPC contracts', () => {
     expect(Channels.repositoriesCurrent).toBe('repositories:current')
   })
 
+  it('requires a server-issued migration token and rejects forged migration paths', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-migration-ipc-'))
+    const handlers = new Map<string, (event: unknown, input?: unknown) => unknown>()
+    const previewAssetStoreMigration = vi.fn(async (path: string) => ({
+      token: 'migration-1', fromPath: '/tmp/old-store', toPath: path, entityCount: 2,
+      symlinkTargets: ['/tmp/project/.codex/skills/demo'], copyTargets: [], conflicts: [],
+      expiresAt: '2026-09-01T10:00:00.000Z',
+    }))
+    const executeAssetStoreMigration = vi.fn(async () => ({ assetStorePath: '/tmp/new-store' }))
+    registerIpc({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+      appStore: new AppStore(join(root, 'state.json')),
+      services: { previewAssetStoreMigration, executeAssetStoreMigration },
+    })
+
+    await expect(handlers.get(Channels.repositoriesPreviewAssetStoreMigration)?.({}, '../forged')).rejects.toThrow()
+    await expect(handlers.get(Channels.repositoriesPreviewAssetStoreMigration)?.({}, '/tmp/new-store')).resolves.toMatchObject({ token: 'migration-1' })
+    await expect(handlers.get(Channels.repositoriesExecuteAssetStoreMigration)?.({}, { token: 'migration-1', path: '/tmp/forged' })).rejects.toThrow()
+    await expect(handlers.get(Channels.repositoriesExecuteAssetStoreMigration)?.({}, 'migration-1')).resolves.toMatchObject({ assetStorePath: '/tmp/new-store' })
+    expect(executeAssetStoreMigration).toHaveBeenCalledWith('migration-1')
+  })
+
+  it('accepts only an opaque token when executing legacy installation migration', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-legacy-migration-ipc-'))
+    const handlers = new Map<string, (event: unknown, input?: unknown) => unknown>()
+    const preview = {
+      token: 'legacy-1', candidates: [], conflicts: [], expiresAt: '2026-09-01T10:00:00.000Z',
+    }
+    const executeLegacyInstallationMigration = vi.fn(async () => preview)
+    registerIpc({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+      appStore: new AppStore(join(root, 'state.json')),
+      services: { previewLegacyInstallationMigration: vi.fn(async () => preview), executeLegacyInstallationMigration },
+    })
+
+    await expect(handlers.get(Channels.repositoriesPreviewLegacyInstallationMigration)?.({}, undefined)).resolves.toEqual(preview)
+    await expect(handlers.get(Channels.repositoriesExecuteLegacyInstallationMigration)?.({}, { token: 'legacy-1', targetPath: '/tmp/forged' })).rejects.toThrow()
+    await expect(handlers.get(Channels.repositoriesExecuteLegacyInstallationMigration)?.({}, 'legacy-1')).resolves.toEqual(preview)
+    expect(executeLegacyInstallationMigration).toHaveBeenCalledWith('legacy-1')
+  })
+
   it('uses strict declarative channels for third-party repository management', async () => {
     const root = await mkdtemp(join(tmpdir(), 'xc-desktop-third-party-ipc-'))
     const handlers = new Map<string, (event: unknown, input?: unknown) => unknown>()

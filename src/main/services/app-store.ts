@@ -9,6 +9,7 @@ import {
   DesktopStateDefaults,
   DesktopStateSchema,
   DesktopStateV1Schema,
+  DesktopStateV2Schema,
   InstallationSourceRecord,
   InstallationSourceRecordSchema,
   ProjectRecord,
@@ -31,6 +32,28 @@ const isWithin = (parent: string, child: string): boolean => {
 const installationTargetKey = (record: Pick<InstallationSourceRecord, 'scope' | 'projectId' | 'agentId' | 'targetPath'>): string =>
   JSON.stringify([record.scope, record.projectId, record.agentId, record.targetPath])
 
+const logicalTargetPath = async (value: string): Promise<string> => {
+  const absolute = resolve(value)
+  const missingParents: string[] = []
+  let cursor = dirname(absolute)
+  let canonicalParent: string
+  while (true) {
+    try {
+      canonicalParent = await realpath(cursor)
+      break
+    } catch {
+      const parent = dirname(cursor)
+      if (parent === cursor) {
+        canonicalParent = resolve(cursor)
+        break
+      }
+      missingParents.unshift(basename(cursor))
+      cursor = parent
+    }
+  }
+  return join(canonicalParent, ...missingParents, basename(absolute))
+}
+
 export class AppStore {
   private readonly absoluteFilePath: string
 
@@ -41,15 +64,27 @@ export class AppStore {
   async read(): Promise<DesktopState> {
     try {
       const raw = await readFile(this.absoluteFilePath, 'utf8')
-      const parsed = z.union([DesktopStateSchema, DesktopStateV1Schema]).parse(JSON.parse(raw))
+      const parsed = z.union([DesktopStateSchema, DesktopStateV2Schema, DesktopStateV1Schema]).parse(JSON.parse(raw))
       const state: DesktopState = parsed.version === 1
         ? {
             ...parsed,
-            version: 2,
+            version: 3,
             thirdPartyRepositories: [],
-            installationSources: [],
+            legacyInstallationSources: [],
           }
-        : parsed
+        : parsed.version === 2
+          ? {
+              version: 3,
+              projects: parsed.projects,
+              customAgents: parsed.customAgents,
+              agentEnabled: parsed.agentEnabled,
+              theme: parsed.theme,
+              lastSource: parsed.lastSource,
+              windowBounds: parsed.windowBounds,
+              thirdPartyRepositories: parsed.thirdPartyRepositories,
+              legacyInstallationSources: parsed.installationSources,
+            }
+          : parsed
       const ids = new Set<string>()
       const paths = new Set<string>()
       const canonicalProjects: ProjectRecord[] = []
@@ -80,8 +115,8 @@ export class AppStore {
       const installationIds = new Set<string>()
       const installationTargets = new Set<string>()
       const canonicalInstallations: InstallationSourceRecord[] = []
-      for (const record of state.installationSources) {
-        const targetPath = await realpath(record.targetPath).catch(() => resolve(record.targetPath))
+      for (const record of state.legacyInstallationSources) {
+        const targetPath = await logicalTargetPath(record.targetPath)
         const normalized = { ...record, targetPath }
         const targetKey = installationTargetKey(normalized)
         if (installationIds.has(record.id)) throw new Error('state contains duplicate installation source id')
@@ -97,7 +132,7 @@ export class AppStore {
       return {
         ...state,
         projects: canonicalProjects,
-        installationSources: canonicalInstallations,
+        legacyInstallationSources: canonicalInstallations,
         lastSource,
       }
     } catch (error) {
@@ -237,23 +272,23 @@ export class AppStore {
   }
 
   async listInstallationSources(): Promise<InstallationSourceRecord[]> {
-    return (await this.read()).installationSources
+    return (await this.read()).legacyInstallationSources
   }
 
   async upsertInstallationSource(record: InstallationSourceRecord): Promise<void> {
     const parsed = InstallationSourceRecordSchema.parse(record)
-    const targetPath = await realpath(parsed.targetPath).catch(() => resolve(parsed.targetPath))
+    const targetPath = await logicalTargetPath(parsed.targetPath)
     const normalized = { ...parsed, targetPath }
     await this.update((state) => {
       const targetKey = installationTargetKey(normalized)
-      if (state.installationSources.some((entry) => entry.id !== normalized.id && installationTargetKey(entry) === targetKey)) {
+      if (state.legacyInstallationSources.some((entry) => entry.id !== normalized.id && installationTargetKey(entry) === targetKey)) {
         throw new Error('duplicate installation target')
       }
-      const index = state.installationSources.findIndex((entry) => entry.id === normalized.id)
-      if (index < 0) return { ...state, installationSources: [...state.installationSources, normalized] }
-      const installationSources = [...state.installationSources]
-      installationSources[index] = normalized
-      return { ...state, installationSources }
+      const index = state.legacyInstallationSources.findIndex((entry) => entry.id === normalized.id)
+      if (index < 0) return { ...state, legacyInstallationSources: [...state.legacyInstallationSources, normalized] }
+      const legacyInstallationSources = [...state.legacyInstallationSources]
+      legacyInstallationSources[index] = normalized
+      return { ...state, legacyInstallationSources }
     })
   }
 
@@ -261,13 +296,13 @@ export class AppStore {
     const parsed = z.string().min(1).parse(id)
     await this.update((state) => ({
       ...state,
-      installationSources: state.installationSources.filter((record) => record.id !== parsed),
+      legacyInstallationSources: state.legacyInstallationSources.filter((record) => record.id !== parsed),
     }))
   }
 
   async findInstallationSourceByTarget(input: Pick<InstallationSourceRecord, 'scope' | 'projectId' | 'agentId' | 'targetPath'>): Promise<InstallationSourceRecord | null> {
-    const targetPath = await realpath(input.targetPath).catch(() => resolve(input.targetPath))
+    const targetPath = await logicalTargetPath(input.targetPath)
     const key = installationTargetKey({ ...input, targetPath })
-    return (await this.read()).installationSources.find((record) => installationTargetKey(record) === key) ?? null
+    return (await this.read()).legacyInstallationSources.find((record) => installationTargetKey(record) === key) ?? null
   }
 }

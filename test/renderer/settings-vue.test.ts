@@ -3,6 +3,7 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, screen, waitFor } from '@testing-library/vue'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ElMessageBox } from 'element-plus'
 import CustomAgentForm from '../../src/renderer/src/features/settings/CustomAgentForm.vue'
 import RepositoryConfigForm from '../../src/renderer/src/features/settings/RepositoryConfigForm.vue'
 import SettingsDialog from '../../src/renderer/src/features/settings/SettingsDialog.vue'
@@ -188,6 +189,65 @@ describe('Vue settings', () => {
       },
     })
     await waitFor(() => expect(screen.getByText('配置已保存，中央仓库已刷新')).toBeInTheDocument())
+  })
+
+  it('previews and confirms an asset-store migration before saving the new path', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue({ action: 'confirm', value: '' } as never)
+    const previewAssetStoreMigration = vi.fn().mockResolvedValue({
+      token: 'migration-1', fromPath: '/tmp/old-store', toPath: '/tmp/new-store', entityCount: 3,
+      symlinkTargets: ['/tmp/project/.codex/skills/demo'], copyTargets: ['/tmp/project/.claude/skills/demo'],
+      conflicts: [], expiresAt: '2026-09-01T10:00:00.000Z',
+    })
+    const executeAssetStoreMigration = vi.fn().mockResolvedValue({ assetStorePath: '/tmp/new-store' })
+    const updateConfig = vi.fn(async (input) => ({
+      config: input,
+      repository: { branch: 'main', kind: 'local-worktree' as const, allowSymlink: true, stale: false, cachedAt: null },
+    }))
+    window.xcSkills = {
+      repositories: {
+        chooseAssetStorePath: vi.fn().mockResolvedValue('/tmp/new-store'),
+        previewAssetStoreMigration,
+        executeAssetStoreMigration,
+        updateConfig,
+      },
+    } as never
+    renderTestApp(RepositoryConfigForm, { props: { config: {
+      mode: 'local', repoPath: '/tmp/catalog', remoteUrl: '', defaultBranch: 'main', defaultGroups: [], assetStorePath: '/tmp/old-store',
+    } } })
+
+    await user.click(screen.getByRole('button', { name: '选择资源存储目录' }))
+    await user.click(screen.getByRole('button', { name: '保存并刷新' }))
+
+    await waitFor(() => expect(previewAssetStoreMigration).toHaveBeenCalledWith('/tmp/new-store'))
+    expect(ElMessageBox.confirm).toHaveBeenCalledWith(expect.stringMatching(/3 个实体.*1 个软链接/), '确认迁移资源目录', expect.any(Object))
+    expect(executeAssetStoreMigration).toHaveBeenCalledWith('migration-1')
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({ assetStorePath: '/tmp/new-store' }))
+  })
+
+  it('shows and confirms the shared-manifest migration for legacy installs', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue({ action: 'confirm', value: '' } as never)
+    const previewLegacyInstallationMigration = vi.fn().mockResolvedValue({
+      token: 'legacy-token',
+      candidates: [{ recordId: 'legacy-1', targetPath: '/tmp/project/.codex/skills/demo', sourceLabel: '中央仓库', method: 'symlink' }],
+      conflicts: [{ recordId: 'legacy-2', targetPath: '/tmp/project/.claude/skills/demo', reason: '来源仓库不可用' }],
+      expiresAt: '2026-09-01T10:00:00.000Z',
+    })
+    const executeLegacyInstallationMigration = vi.fn().mockResolvedValue({
+      token: 'legacy-next', candidates: [], conflicts: [], expiresAt: '2026-09-01T10:05:00.000Z',
+    })
+    window.xcSkills = { repositories: { previewLegacyInstallationMigration, executeLegacyInstallationMigration } } as never
+    renderTestApp(RepositoryConfigForm, { props: { config: {
+      mode: 'local', repoPath: '/tmp/catalog', remoteUrl: '', defaultBranch: 'main', defaultGroups: [], assetStorePath: '/tmp/store',
+    } } })
+
+    expect(await screen.findByText('旧版安装等待迁移')).toBeInTheDocument()
+    expect(screen.getByText(/1 项可自动迁移.*1 项需要手动处理/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '迁移到统一资源目录' }))
+
+    await waitFor(() => expect(executeLegacyInstallationMigration).toHaveBeenCalledWith('legacy-token'))
+    expect(ElMessageBox.confirm).toHaveBeenCalledWith(expect.stringContaining('1 个旧安装'), '迁移旧版安装', expect.any(Object))
   })
 
   it('keeps edited repository values after a save failure', async () => {

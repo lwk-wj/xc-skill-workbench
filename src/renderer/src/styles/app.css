@@ -2036,6 +2036,43 @@ h3 {
   padding: 16px;
 }
 
+.legacy-migration-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--warning) 36%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface-raised));
+  padding: 12px 14px;
+}
+
+.legacy-migration-card strong,
+.legacy-migration-card p {
+  margin: 0;
+}
+
+.legacy-migration-card strong {
+  color: var(--text-primary);
+  font-size: 12.5px;
+}
+
+.legacy-migration-card p,
+.legacy-migration-card li {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.legacy-migration-card p {
+  margin-top: 3px;
+}
+
+.legacy-migration-card ul {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-left: 18px;
+}
+
 .repository-config-heading {
   display: flex;
   align-items: center;

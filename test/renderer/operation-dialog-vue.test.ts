@@ -110,11 +110,11 @@ describe('Vue operation dialog', () => {
     render(OperationDialog, { global: { plugins: [pinia, ElementPlus] } })
 
     await waitFor(() => expect(screen.getByRole('radio', { name: '软链接' })).toBeDisabled())
-    expect(screen.getByText('当前仓库使用远程缓存，仅支持复制安装。切换为本地仓库后可使用软链接。')).toBeInTheDocument()
+    expect(screen.getByText('当前文件系统不支持创建软链接，请使用复制安装。')).toBeInTheDocument()
     expect(plan).toHaveBeenCalledWith(expect.objectContaining({ method: 'copy' }))
   })
 
-  it('keeps third-party installs copy-only and requires explicit source replacement', async () => {
+  it('allows managed symlinks for third-party installs and requires explicit source replacement', async () => {
     const user = userEvent.setup()
     const conflict = {
       targetPath: '/project/.codex/skills/Skill One',
@@ -134,8 +134,8 @@ describe('Vue operation dialog', () => {
 
     render(OperationDialog, { global: { plugins: [pinia, ElementPlus] } })
 
-    expect(screen.queryByRole('radiogroup', { name: '安装方式' })).toBeNull()
-    expect(await screen.findByText('第三方仓库 Skill 使用复制方式安装。')).toBeInTheDocument()
+    expect(await screen.findByRole('radiogroup', { name: '安装方式' })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: '软链接' })).toBeEnabled()
     expect(screen.getByText('中央仓库')).toBeInTheDocument()
     expect(screen.getByText('Team Skills')).toBeInTheDocument()
     expect(screen.getByText(conflict.targetPath)).toBeInTheDocument()

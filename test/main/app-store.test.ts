@@ -15,13 +15,13 @@ describe('AppStore', () => {
     await store.setTheme('dark')
 
     await expect(store.read()).resolves.toMatchObject({
-      version: 2,
+      version: 3,
       theme: 'dark',
       projects: [{ id: 'project-1', name: 'Admin', path: await realpath(project) }],
       thirdPartyRepositories: [],
-      installationSources: [],
+      legacyInstallationSources: [],
     })
-    expect(JSON.parse(await readFile(join(root, 'state.json'), 'utf8')).version).toBe(2)
+    expect(JSON.parse(await readFile(join(root, 'state.json'), 'utf8')).version).toBe(3)
   })
 
   it('rejects duplicate canonical project paths and paths containing state', async () => {
@@ -32,7 +32,7 @@ describe('AppStore', () => {
     await expect(store.addProject({ id: 'one', name: 'One', path: project })).rejects.toThrow()
   })
 
-  it('migrates V1 state in memory and writes V2 on the next mutation', async () => {
+  it('migrates V1 state in memory and writes V3 on the next mutation', async () => {
     const root = await mkdtemp(join(tmpdir(), 'xc-desktop-store-'))
     const statePath = join(root, 'state.json')
     const project = join(root, 'LegacyProject')
@@ -51,19 +51,19 @@ describe('AppStore', () => {
 
     await expect(store.read()).resolves.toMatchObject({
       ...legacy,
-      version: 2,
+      version: 3,
       projects: [{ ...legacy.projects[0], path: await realpath(project) }],
       thirdPartyRepositories: [],
-      installationSources: [],
+      legacyInstallationSources: [],
     })
     expect(JSON.parse(await readFile(statePath, 'utf8')).version).toBe(1)
 
     await store.setTheme('light')
     expect(JSON.parse(await readFile(statePath, 'utf8'))).toMatchObject({
-      version: 2,
+      version: 3,
       theme: 'light',
       thirdPartyRepositories: [],
-      installationSources: [],
+      legacyInstallationSources: [],
     })
   })
 
@@ -162,8 +162,9 @@ describe('AppStore', () => {
       installedCommit: 'a'.repeat(40), installedHash: 'hash-1',
     }
     await store.upsertInstallationSource(record)
+    const canonicalRoot = await realpath(root)
     await expect(store.findInstallationSourceByTarget({ scope: 'global', projectId: null, agentId: 'codex', targetPath: join(root, 'targets', 'skill') }))
-      .resolves.toMatchObject({ id: 'install-1', targetPath: join(root, 'targets', 'skill') })
+      .resolves.toMatchObject({ id: 'install-1', targetPath: join(canonicalRoot, 'targets', 'skill') })
 
     await expect(store.upsertInstallationSource({ ...record, id: 'install-2' })).rejects.toThrow(/duplicate installation target/i)
     await store.removeThirdPartyRepository(repository.id)

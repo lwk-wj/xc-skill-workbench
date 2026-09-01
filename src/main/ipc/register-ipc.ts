@@ -1,9 +1,11 @@
-import { basename } from 'node:path'
+import { basename, isAbsolute } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import {
   AgentDefinitionSchema, AssetDetailSchema, AssetSelectionSchema, AssetRecordSchema, Channels, ExternalUrlSchema,
   OperationRequestSchema, OperationResultSchema, OperationPlanSchema, OperationProgressSchema, RepositoryBranchSchema, RepositoryViewSchema,
   RepositoryConfigInputSchema, RepositoryConfigUpdateResultSchema, SourceSelectionSchema, ThemePreferenceSchema,
+  AssetStoreMigrationPreviewSchema,
+  LegacyInstallationMigrationPreviewSchema,
   ThirdPartyRepositoryInputSchema, ThirdPartyRepositoryViewSchema,
   RelinkInstallationInputSchema,
   SourceConflictSchema,
@@ -13,6 +15,8 @@ import {
   type ThirdPartyRepositoryInput, type ThirdPartyRepositoryView,
   type RelinkInstallationInput,
   type SourceConflict,
+  type AssetStoreMigrationPreview,
+  type LegacyInstallationMigrationPreview,
 } from '../../shared/ipc.js'
 import type { AppStore } from '../services/app-store.js'
 import type { CoreService } from '../services/core-service.js'
@@ -35,6 +39,10 @@ export interface IpcServices {
   getConfig?: () => Promise<XcSkillsConfig>
   currentRepository?: () => Promise<RepositoryView>
   updateConfig?: (input: RepositoryConfigInput) => Promise<RepositoryConfigUpdateResult>
+  previewAssetStoreMigration?: (path: string) => Promise<AssetStoreMigrationPreview>
+  executeAssetStoreMigration?: (token: string) => Promise<XcSkillsConfig>
+  previewLegacyInstallationMigration?: () => Promise<LegacyInstallationMigrationPreview>
+  executeLegacyInstallationMigration?: (token: string) => Promise<LegacyInstallationMigrationPreview>
   listBranches?: () => Promise<RepositoryBranch[]>
   selectBranch?: (branch: string) => Promise<RepositoryView>
   setDefaultBranch?: (branch: string) => Promise<XcSkillsConfig>
@@ -79,6 +87,8 @@ export const registerIpc = ({ ipcMain, appStore, services: suppliedServices = {}
     listProjects: () => coreService.listProjects(), chooseAndAddProject: () => coreService.chooseAndAddProject(), removeProject: (id) => coreService.removeProject(id),
     listAgents: () => coreService.listAgents(), setAgentEnabled: (id, enabled) => coreService.setAgentEnabled(id, enabled), saveCustomAgent: (agent) => coreService.saveCustomAgent(agent), removeCustomAgent: (id) => coreService.removeCustomAgent(id),
     getConfig: () => coreService.getConfig(), currentRepository: () => coreService.currentRepository(), updateConfig: (input) => coreService.updateConfig(input), listBranches: () => coreService.listBranches(), selectBranch: (branch) => coreService.selectBranch(branch), setDefaultBranch: (branch) => coreService.setDefaultBranch(branch), refresh: () => coreService.refresh(),
+    previewAssetStoreMigration: (path) => coreService.previewAssetStoreMigration(path), executeAssetStoreMigration: (token) => coreService.executeAssetStoreMigration(token),
+    previewLegacyInstallationMigration: () => coreService.previewLegacyInstallationMigration(), executeLegacyInstallationMigration: (token) => coreService.executeLegacyInstallationMigration(token),
     listThirdPartyRepositories: () => coreService.listThirdPartyRepositories(), addThirdPartyRepository: (input) => coreService.addThirdPartyRepository(input), updateThirdPartyRepository: (id, input) => coreService.updateThirdPartyRepository(id, input), removeThirdPartyRepository: (id) => coreService.removeThirdPartyRepository(id), refreshThirdPartyRepository: (id) => coreService.refreshThirdPartyRepository(id),
     relinkInstallation: (input) => coreService.relinkInstallation(input),
     scan: (source) => coreService.scan(source), detail: (selection) => coreService.detail(selection), statuses: (selection) => coreService.statuses(selection),
@@ -140,6 +150,23 @@ export const registerIpc = ({ ipcMain, appStore, services: suppliedServices = {}
     const picked = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
     return picked.canceled || !picked.filePaths[0] ? null : picked.filePaths[0]
   })
+  invoke(Channels.repositoriesChooseAssetStorePath, noInput, async () => {
+    if (!dialog) return null
+    const picked = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
+    return picked.canceled || !picked.filePaths[0] ? null : picked.filePaths[0]
+  })
+  invoke(Channels.repositoriesPreviewAssetStoreMigration, z.string().min(1).refine((path) => isAbsolute(path) && !path.split(/[\\/]/u).includes('..'), 'absolute migration path required'), async (path) => AssetStoreMigrationPreviewSchema.parse(
+    services.previewAssetStoreMigration ? await services.previewAssetStoreMigration(path) : unsupported('repositories.previewAssetStoreMigration'),
+  ))
+  invoke(Channels.repositoriesExecuteAssetStoreMigration, z.string().regex(/^[A-Za-z0-9._:-]+$/).min(1).max(200), async (token) => XcSkillsConfigSchema.parse(
+    services.executeAssetStoreMigration ? await services.executeAssetStoreMigration(token) : unsupported('repositories.executeAssetStoreMigration'),
+  ))
+  invoke(Channels.repositoriesPreviewLegacyInstallationMigration, noInput, async () => LegacyInstallationMigrationPreviewSchema.parse(
+    services.previewLegacyInstallationMigration ? await services.previewLegacyInstallationMigration() : unsupported('repositories.previewLegacyInstallationMigration'),
+  ))
+  invoke(Channels.repositoriesExecuteLegacyInstallationMigration, z.string().regex(/^[A-Za-z0-9._:-]+$/).min(1).max(200), async (token) => LegacyInstallationMigrationPreviewSchema.parse(
+    services.executeLegacyInstallationMigration ? await services.executeLegacyInstallationMigration(token) : unsupported('repositories.executeLegacyInstallationMigration'),
+  ))
   invoke(Channels.repositoriesUpdateConfig, RepositoryConfigInputSchema, async (input) => {
     const result = services.updateConfig
       ? await services.updateConfig(input)

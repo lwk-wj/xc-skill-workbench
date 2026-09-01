@@ -191,7 +191,7 @@ describe('Vue resource explorer', () => {
     expect(rowLabel.closest('[role="listitem"]')).toHaveClass('selected')
   })
 
-  it('uses the current repository capability when opening an install operation', async () => {
+  it('allows a local entity-store symlink even when the repository itself is cached', async () => {
     const user = userEvent.setup()
     const api = makeApi()
     vi.mocked(api.assets.statuses).mockResolvedValue([{
@@ -208,8 +208,8 @@ describe('Vue resource explorer', () => {
     await user.click(await screen.findByRole('button', { name: '安装到… Skill One' }))
 
     const operation = await screen.findByRole('dialog', { name: '安装资源' })
-    expect(api.repositories.current).toHaveBeenCalledTimes(1)
-    expect(within(operation).getByRole('radio', { name: '软链接' })).toBeDisabled()
+    expect(api.repositories.current).not.toHaveBeenCalled()
+    expect(within(operation).getByRole('radio', { name: '软链接' })).toBeEnabled()
   })
 
   it('opens installation directly from a central repository row', async () => {

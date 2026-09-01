@@ -39,14 +39,13 @@ const refreshPlans = (): void => { void operation.refreshPlans() }
           </ElCheckboxGroup>
         </fieldset>
       </div>
-      <p v-if="operation.source.kind === 'third-party' && (operation.kind === 'install' || operation.kind === 'update')" class="operation-method-note third-party-copy-note">第三方仓库 Skill 使用复制方式安装。</p>
-      <fieldset v-else-if="operation.kind === 'install' || operation.kind === 'update'">
+      <fieldset v-if="operation.kind === 'install' || operation.kind === 'update'">
         <legend>安装方式</legend>
         <ElRadioGroup v-model="operation.method" aria-label="安装方式" @change="refreshPlans">
           <ElRadio value="copy">复制</ElRadio>
           <ElRadio value="symlink" :disabled="!operation.allowSymlink">软链接</ElRadio>
         </ElRadioGroup>
-        <p v-if="!operation.allowSymlink" class="operation-method-note">当前仓库使用远程缓存，仅支持复制安装。切换为本地仓库后可使用软链接。</p>
+        <p v-if="!operation.allowSymlink" class="operation-method-note">当前文件系统不支持创建软链接，请使用复制安装。</p>
       </fieldset>
       <section v-if="operation.sourceConflict" class="source-conflict-card" aria-label="来源冲突">
         <div class="source-conflict-heading">

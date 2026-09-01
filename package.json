@@ -24,7 +24,7 @@
     "marked": "18.0.6",
     "pinia": "^4.0.2",
     "vue": "^3.5.40",
-    "xc-skills": "git+https://github.com/lwk-wj/xc-skills.git#aa320753919333c14345f7fc4a4059994b669dd5",
+    "xc-skills": "git+https://github.com/lwk-wj/xc-skills.git#604bb54e5d0f82744e0b7e74cf0ecf0ba154c25e",
     "zod": "4.4.3"
   },
   "devDependencies": {
