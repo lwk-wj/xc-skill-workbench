@@ -83,6 +83,22 @@ export const useExplorerStore = defineStore('explorer', () => {
     selectedBranch.value = branches.value.find((branch) => branch.current)?.name ?? null
   }
 
+  const refreshCentralSource = async (): Promise<void> => {
+    loading.value = true
+    error.value = null
+    try {
+      const view = await window.xcSkills.repositories.refresh()
+      stale.value = view.stale
+      cachedAt.value = view.cachedAt
+      await loadBranches()
+      selectedBranch.value = view.branch
+      await scan(central)
+    } catch (cause) {
+      loading.value = false
+      error.value = cause instanceof Error ? cause.message : '刷新中央仓库失败'
+    }
+  }
+
   const initialize = async (): Promise<void> => {
     try {
       const [nextProjects, nextAgents, lastSource, repositoryConfig] = await Promise.all([
@@ -113,10 +129,8 @@ export const useExplorerStore = defineStore('explorer', () => {
     agentFilter.value = 'all'
     stale.value = false
     cachedAt.value = null
-    await scan(source)
-    if (source.kind === 'central') {
-      try { await loadBranches() } catch (cause) { error.value = cause instanceof Error ? cause.message : '加载分支失败' }
-    }
+    if (source.kind === 'central') await refreshCentralSource()
+    else await scan(source)
   }
 
   const selectBranch = async (branch: string): Promise<void> => {
@@ -163,7 +177,10 @@ export const useExplorerStore = defineStore('explorer', () => {
   }
 
   const refreshAgents = async (): Promise<void> => { agents.value = await window.xcSkills.agents.list() }
-  const refreshCurrentSource = async (): Promise<void> => scan(selectedSource.value)
+  const refreshCurrentSource = async (): Promise<void> => {
+    if (selectedSource.value.kind === 'central') await refreshCentralSource()
+    else await scan(selectedSource.value)
+  }
   const refreshRepository = async (): Promise<void> => {
     try {
       repositoryGroups.value = (await window.xcSkills.repositories.getConfig()).defaultGroups ?? []

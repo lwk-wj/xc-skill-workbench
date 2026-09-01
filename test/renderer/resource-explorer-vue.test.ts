@@ -42,6 +42,7 @@ function makeApi() {
       ]),
       selectBranch: vi.fn().mockResolvedValue({ branch: 'feature/demo', kind: 'branch-cache', allowSymlink: true, stale: false, cachedAt: null }),
       setDefaultBranch: vi.fn(),
+      refresh: vi.fn().mockResolvedValue({ branch: 'main', kind: 'branch-cache', allowSymlink: false, stale: false, cachedAt: '2026-09-01T00:00:00.000Z' }),
     },
     assets: {
       scan: vi.fn().mockImplementation(async (source: { kind: string }) => source.kind === 'central' ? [skill] : duplicates),
@@ -115,6 +116,43 @@ describe('Vue resource explorer', () => {
     await user.click(screen.getByRole('button', { name: /^Demo$/ }))
     await waitFor(() => expect(screen.getAllByText('call-api')).toHaveLength(2))
     expect(screen.queryByRole('combobox', { name: '分组筛选' })).toBeNull()
+  })
+
+  it('pulls the latest central assets from the repository action', async () => {
+    const user = userEvent.setup()
+    const api = makeApi()
+    let repositoryRefreshed = false
+    vi.mocked(api.repositories.refresh).mockImplementation(async () => {
+      repositoryRefreshed = true
+      return { branch: 'main', kind: 'branch-cache', allowSymlink: false, stale: false, cachedAt: '2026-09-01T00:00:00.000Z' }
+    })
+    vi.mocked(api.assets.scan).mockImplementation(async (source) => source.kind === 'central'
+      ? [repositoryRefreshed ? { ...skill, id: 'latest-skill', name: 'Latest Skill' } : skill]
+      : duplicates)
+    window.xcSkills = api as never
+    renderTestApp(App)
+    await screen.findByText('Skill One')
+
+    await user.click(screen.getByRole('button', { name: '拉取更新' }))
+
+    expect(await screen.findByText('Latest Skill')).toBeInTheDocument()
+    expect(screen.queryByText('Skill One')).toBeNull()
+  })
+
+  it('disables the repository action while a pull is running', async () => {
+    const user = userEvent.setup()
+    const api = makeApi()
+    let finishRefresh!: (view: Awaited<ReturnType<typeof api.repositories.refresh>>) => void
+    vi.mocked(api.repositories.refresh).mockImplementation(() => new Promise((resolve) => { finishRefresh = resolve }))
+    window.xcSkills = api as never
+    renderTestApp(App)
+    await screen.findByText('Skill One')
+
+    await user.click(screen.getByRole('button', { name: '拉取更新' }))
+
+    expect(await screen.findByRole('button', { name: '正在拉取' })).toBeDisabled()
+    finishRefresh({ branch: 'main', kind: 'branch-cache', allowSymlink: false, stale: false, cachedAt: '2026-09-01T00:00:00.000Z' })
+    await waitFor(() => expect(screen.getByRole('button', { name: '拉取更新' })).toBeEnabled())
   })
 
   it('clears the selected asset before changing sources', async () => {

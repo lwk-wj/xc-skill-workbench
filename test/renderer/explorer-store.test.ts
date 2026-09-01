@@ -31,6 +31,7 @@ describe('explorer store', () => {
         listBranches: vi.fn().mockResolvedValue([{ name: 'main', current: true, default: true, remote: false }]),
         selectBranch: vi.fn().mockResolvedValue({ branch: 'main', kind: 'branch-cache', allowSymlink: true, stale: false, cachedAt: null }),
         setDefaultBranch: vi.fn(),
+        refresh: vi.fn().mockResolvedValue({ branch: 'main', kind: 'branch-cache', allowSymlink: false, stale: false, cachedAt: '2026-09-01T00:00:00.000Z' }),
       },
       assets: { scan: vi.fn().mockResolvedValue([skill]) },
       preferences: { getLastSource: vi.fn().mockResolvedValue({ kind: 'central' }) },
@@ -102,6 +103,46 @@ describe('explorer store', () => {
     expect(window.xcSkills.repositories.listBranches).toHaveBeenCalledTimes(2)
     expect(window.xcSkills.assets.scan).toHaveBeenLastCalledWith({ kind: 'central' })
     expect(store.assets.map((asset) => asset.name)).toEqual(['Replacement Skill'])
+  })
+
+  it('refreshes the remote cache before rescanning the current central source', async () => {
+    let repositoryRefreshed = false
+    vi.mocked(window.xcSkills.repositories.refresh).mockImplementation(async () => {
+      repositoryRefreshed = true
+      return { branch: 'main', kind: 'branch-cache', allowSymlink: false, stale: false, cachedAt: '2026-09-01T00:00:00.000Z' }
+    })
+    vi.mocked(window.xcSkills.assets.scan).mockImplementation(async () => [
+      repositoryRefreshed
+        ? { ...skill, id: 'latest-skill', name: 'Latest Skill' }
+        : skill,
+    ])
+    const store = useExplorerStore()
+    await store.initialize()
+    expect(store.assets.map((asset) => asset.name)).toEqual(['Skill One'])
+
+    await store.refreshCurrentSource()
+
+    expect(store.assets.map((asset) => asset.name)).toEqual(['Latest Skill'])
+    expect(store.cachedAt).toBe('2026-09-01T00:00:00.000Z')
+  })
+
+  it('refreshes the remote cache when returning to the central source', async () => {
+    let repositoryRefreshed = false
+    vi.mocked(window.xcSkills.repositories.refresh).mockImplementation(async () => {
+      repositoryRefreshed = true
+      return { branch: 'main', kind: 'branch-cache', allowSymlink: false, stale: false, cachedAt: '2026-09-01T00:00:00.000Z' }
+    })
+    vi.mocked(window.xcSkills.assets.scan).mockImplementation(async (source) => {
+      if (source.kind === 'project') return [{ ...skill, id: 'project-skill', name: 'Project Skill' }]
+      return [repositoryRefreshed ? { ...skill, id: 'latest-skill', name: 'Latest Skill' } : skill]
+    })
+    const store = useExplorerStore()
+    await store.initialize()
+    await store.selectSource(store.sources.find((source) => source.kind === 'project')!)
+
+    await store.selectSource(store.sources.find((source) => source.kind === 'central')!)
+
+    expect(store.assets.map((asset) => asset.name)).toEqual(['Latest Skill'])
   })
 
   it('reloads branches without replacing assets while a project is selected', async () => {

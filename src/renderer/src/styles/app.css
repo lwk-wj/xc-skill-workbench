@@ -204,6 +204,37 @@ h3 {
   position: relative;
 }
 
+.repository-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.repository-pull-button.el-button {
+  min-height: 38px;
+  margin: 0;
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border-strong));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--control-surface));
+  color: var(--accent);
+  padding: 8px 12px;
+  box-shadow: var(--shadow-sm);
+  font-weight: 620;
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.repository-pull-button.el-button:hover:not(.is-disabled) {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--control-surface));
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.repository-pull-button.el-button.is-disabled {
+  border-color: var(--border);
+  background: var(--surface-muted);
+  color: var(--text-tertiary);
+}
+
 .branch-button {
   display: inline-flex;
   min-height: 38px;

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ElDropdown, ElDropdownItem, ElDropdownMenu, ElInput, ElOption, ElSelect } from 'element-plus'
+import { RefreshRight } from '@element-plus/icons-vue'
+import { ElButton, ElDropdown, ElDropdownItem, ElDropdownMenu, ElInput, ElOption, ElSelect } from 'element-plus'
 import { useExplorerStore } from '../stores/explorer'
 import AssetList from './AssetList.vue'
 import ErrorNotice from './ErrorNotice.vue'
@@ -20,6 +21,7 @@ const tabs: Array<{ value: AssetType; label: string }> = [
 ]
 
 const chooseBranch = (branch: string): void => { void explorer.selectBranch(branch) }
+const pullRepository = (): void => { void explorer.refreshCurrentSource() }
 const selectAsset = (assetId: string): void => {
   explorer.selectedAssetId = assetId
   emit('asset-selected')
@@ -31,16 +33,27 @@ const selectAsset = (assetId: string): void => {
     <header class="explorer-header">
       <div class="title-row">
         <div><h1>{{ explorer.selectedSource.label }}</h1><p class="subtitle">浏览与管理资源</p></div>
-        <ElDropdown v-if="explorer.selectedSource.kind === 'central'" trigger="click" @command="chooseBranch">
-          <button class="branch-button" aria-label="选择分支">分支：<span class="branch-value">{{ explorer.selectedBranch ?? 'main' }}</span><span class="select-chevron" aria-hidden="true">⌄</span></button>
-          <template #dropdown>
-            <ElDropdownMenu>
-              <ElDropdownItem v-for="branch in explorer.branches" :key="branch.name" :command="branch.name">
-                {{ branch.name }}{{ branch.default ? ' · 默认' : '' }}
-              </ElDropdownItem>
-            </ElDropdownMenu>
-          </template>
-        </ElDropdown>
+        <div v-if="explorer.selectedSource.kind === 'central'" class="repository-actions">
+          <ElButton
+            class="repository-pull-button"
+            :icon="RefreshRight"
+            :loading="explorer.loading"
+            :disabled="explorer.loading"
+            @click="pullRepository"
+          >
+            {{ explorer.loading ? '正在拉取' : '拉取更新' }}
+          </ElButton>
+          <ElDropdown trigger="click" @command="chooseBranch">
+            <button class="branch-button" aria-label="选择分支">分支：<span class="branch-value">{{ explorer.selectedBranch ?? 'main' }}</span><span class="select-chevron" aria-hidden="true">⌄</span></button>
+            <template #dropdown>
+              <ElDropdownMenu>
+                <ElDropdownItem v-for="branch in explorer.branches" :key="branch.name" :command="branch.name">
+                  {{ branch.name }}{{ branch.default ? ' · 默认' : '' }}
+                </ElDropdownItem>
+              </ElDropdownMenu>
+            </template>
+          </ElDropdown>
+        </div>
       </div>
       <div v-if="explorer.stale" class="stale-banner">缓存数据 · {{ explorer.cachedAt ?? '时间未知' }}</div>
       <div class="toolbar">
