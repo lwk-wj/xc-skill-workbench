@@ -33,6 +33,9 @@ describe('explorer store', () => {
         setDefaultBranch: vi.fn(),
         refresh: vi.fn().mockResolvedValue({ branch: 'main', kind: 'branch-cache', allowSymlink: false, stale: false, cachedAt: '2026-09-01T00:00:00.000Z' }),
       },
+      thirdPartyRepositories: {
+        list: vi.fn().mockResolvedValue([]), add: vi.fn(), update: vi.fn(), remove: vi.fn(), refresh: vi.fn(), relinkInstallation: vi.fn(),
+      },
       assets: { scan: vi.fn().mockResolvedValue([skill]) },
       preferences: { getLastSource: vi.fn().mockResolvedValue({ kind: 'central' }) },
     } as never
@@ -161,5 +164,26 @@ describe('explorer store', () => {
     expect(window.xcSkills.repositories.listBranches).toHaveBeenCalledTimes(2)
     expect(window.xcSkills.assets.scan).not.toHaveBeenCalled()
     expect(store.assets.map((asset) => asset.name)).toEqual(['Project Skill'])
+  })
+
+  it('loads, selects, and refreshes a third-party repository by its stable ID', async () => {
+    const repository = {
+      id: 'repo-1', name: 'Team Skills', url: 'https://example.com/team.git', branch: 'trunk', layout: 'catalog' as const,
+      createdAt: '2026-09-01T00:00:00.000Z', lastFetchedAt: '2026-09-01T01:00:00.000Z', skillCount: 1,
+      stale: false, cachedAt: '2026-09-01T01:00:00.000Z', lastError: null,
+    }
+    vi.mocked(window.xcSkills.thirdPartyRepositories.list).mockResolvedValue([repository])
+    vi.mocked(window.xcSkills.thirdPartyRepositories.refresh).mockResolvedValue({ ...repository, cachedAt: '2026-09-01T02:00:00.000Z' })
+    const store = useExplorerStore()
+    await store.initialize()
+
+    const source = store.sources.find((entry) => entry.kind === 'third-party')!
+    expect(source).toMatchObject({ repositoryId: 'repo-1', label: 'Team Skills', layout: 'catalog', branch: 'trunk' })
+    await store.selectSource(source)
+    expect(window.xcSkills.assets.scan).toHaveBeenLastCalledWith({ kind: 'third-party', repositoryId: 'repo-1' })
+
+    await store.refreshCurrentSource()
+    expect(window.xcSkills.thirdPartyRepositories.refresh).toHaveBeenCalledWith('repo-1')
+    expect(store.cachedAt).toBe('2026-09-01T02:00:00.000Z')
   })
 })

@@ -44,6 +44,9 @@ function makeApi() {
       setDefaultBranch: vi.fn(),
       refresh: vi.fn().mockResolvedValue({ branch: 'main', kind: 'branch-cache', allowSymlink: false, stale: false, cachedAt: '2026-09-01T00:00:00.000Z' }),
     },
+    thirdPartyRepositories: {
+      list: vi.fn().mockResolvedValue([]), add: vi.fn(), update: vi.fn(), remove: vi.fn(), refresh: vi.fn(), relinkInstallation: vi.fn(),
+    },
     assets: {
       scan: vi.fn().mockImplementation(async (source: { kind: string }) => source.kind === 'central' ? [skill] : duplicates),
       detail: vi.fn().mockImplementation(async ({ assetId }: { assetId: string }) => ({
@@ -59,6 +62,7 @@ function makeApi() {
     },
     system: { openExternal: vi.fn().mockResolvedValue(undefined) },
     operations: {
+      inspectSourceConflict: vi.fn().mockResolvedValue(null),
       plan: vi.fn().mockResolvedValue({
         id: 'plan-copy', kind: 'install', asset: { id: skill.id, name: skill.name, type: skill.type, path: skill.path },
         sourceBranch: 'main', sourceHash: 'hash', targetRoot: '/tmp/demo/.codex/skills',
@@ -216,5 +220,26 @@ describe('Vue resource explorer', () => {
 
     expect(screen.queryByRole('dialog', { name: 'Skill One' })).toBeNull()
     expect(await screen.findByRole('dialog', { name: '安装资源' })).toBeInTheDocument()
+  })
+
+  it('renders third-party navigation and uses layout-aware repository filters', async () => {
+    const user = userEvent.setup()
+    const api = makeApi()
+    const repository = {
+      id: 'repo-1', name: 'Team Skills', url: 'https://example.com/team.git', branch: 'trunk', layout: 'catalog' as const,
+      createdAt: '2026-09-01T00:00:00.000Z', lastFetchedAt: '2026-09-01T01:00:00.000Z', skillCount: 1,
+      stale: false, cachedAt: '2026-09-01T01:00:00.000Z', lastError: null,
+    }
+    vi.mocked(api.thirdPartyRepositories.list).mockResolvedValue([repository])
+    vi.mocked(api.assets.scan).mockImplementation(async (source) => source.kind === 'third-party' ? [{ ...skill, group: 'common' }] : [skill])
+    window.xcSkills = api as never
+    renderTestApp(App)
+
+    expect(await screen.findByRole('heading', { name: '第三方仓库' })).toBeVisible()
+    await user.click(await screen.findByRole('button', { name: /^Team Skills$/ }))
+    await waitFor(() => expect(api.assets.scan).toHaveBeenLastCalledWith({ kind: 'third-party', repositoryId: 'repo-1' }))
+    expect(screen.getByRole('combobox', { name: '分组筛选' })).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Agent筛选' })).toBeNull()
+    expect(screen.getByText('trunk')).toBeInTheDocument()
   })
 })

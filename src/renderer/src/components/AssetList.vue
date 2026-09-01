@@ -57,7 +57,7 @@ const displayStatusType = (asset: AssetRecord): 'success' | 'warning' | 'danger'
 }
 
 const primaryAction = (asset: AssetRecord): RowAction | null => {
-  if (props.sourceKind === 'central') return { kind: 'install', label: '安装到…' }
+  if (props.sourceKind === 'central' || props.sourceKind === 'third-party') return { kind: 'install', label: '安装到…' }
   const status = locationFor(asset)?.status.status
   if (asset.type === 'skills' && (asset.entryState === 'frozen' || status === 'frozen')) return { kind: 'thaw', label: '解冻' }
   if (status === 'locally_modified') return { kind: 'update-with-warning', label: '查看影响并更新' }
@@ -67,7 +67,7 @@ const primaryAction = (asset: AssetRecord): RowAction | null => {
 }
 
 const overflowActions = (asset: AssetRecord): RowAction[] => {
-  if (props.sourceKind === 'central' || !locationFor(asset)) return []
+  if (props.sourceKind === 'central' || props.sourceKind === 'third-party' || !locationFor(asset)) return []
   const primary = primaryAction(asset)
   return [
     ...(asset.type === 'skills' && asset.entryState === 'active' && primary?.kind !== 'freeze' ? [{ kind: 'freeze', label: '冻结' }] : []),
@@ -77,7 +77,7 @@ const overflowActions = (asset: AssetRecord): RowAction[] => {
 
 const runAction = (action: RowAction, asset: AssetRecord): void => {
   const location = locationFor(asset)
-  if (props.sourceKind === 'central') emit('action', action.kind, asset)
+  if (props.sourceKind === 'central' || props.sourceKind === 'third-party') emit('action', action.kind, asset)
   else if (location) emit('action', action.kind, asset, location)
 }
 </script>

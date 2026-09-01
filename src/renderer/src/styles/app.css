@@ -57,8 +57,13 @@
 .source-sidebar nav {
   position: relative;
   z-index: 1;
-  display: grid;
-  gap: 3px;
+}
+
+.source-navigation {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
 .source-row {
@@ -114,12 +119,92 @@
   color: var(--danger);
 }
 
+.source-section {
+  margin-top: 22px;
+  padding-top: 17px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+}
+
+.source-section-heading-row {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px 8px 12px;
+}
+
+.source-section-heading-row h2 {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.source-section-add.el-button,
+.repository-menu-button.el-button {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 7px;
+  color: var(--text-tertiary);
+}
+
+.source-section-add.el-button:hover,
+.repository-menu-button.el-button:hover {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  color: var(--accent);
+}
+
+.source-section-empty {
+  margin: 2px 12px 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.third-party-source-row {
+  align-items: stretch;
+}
+
+.third-party-source-main {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+}
+
+.third-party-source-main .source-button {
+  width: 100%;
+}
+
+.third-party-source-main .source-button.stale::after {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 7px;
+  border-radius: 50%;
+  background: var(--warning);
+  content: "";
+  vertical-align: 1px;
+}
+
+.repository-menu-button.el-button {
+  align-self: center;
+  opacity: 0;
+  transition: opacity 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.third-party-source-row:hover .repository-menu-button.el-button,
+.repository-menu-button.el-button:focus-visible {
+  opacity: 1;
+}
+
 .sidebar-footer {
   position: relative;
   z-index: 1;
   display: grid;
   gap: 8px;
   margin-top: auto;
+  padding-top: 14px;
 }
 
 .add-project,
