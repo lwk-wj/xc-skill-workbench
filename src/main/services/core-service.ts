@@ -231,7 +231,8 @@ export class CoreService {
     }
     const expiresAt = Date.now() + this.planExpiryMs
     this.pendingMigrations.set(preview.id, { preview, expiresAt })
-    return { ...preview, token: preview.id, expiresAt: new Date(expiresAt).toISOString() }
+    const { id, ...publicPreview } = preview
+    return { ...publicPreview, token: id, expiresAt: new Date(expiresAt).toISOString() }
   }
   async executeAssetStoreMigration(token: string): Promise<XcSkillsConfig> {
     const pending = this.pendingMigrations.get(token)

@@ -6,6 +6,28 @@ import { AppStore } from '../../src/main/services/app-store.js'
 import { CoreService } from '../../src/main/services/core-service.js'
 
 describe('CoreService', () => {
+  it('does not expose the internal migration id in the IPC preview DTO', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-migration-preview-'))
+    const configPath = join(root, 'config.json')
+    await writeFile(configPath, JSON.stringify({
+      mode: 'local',
+      repoPath: join(root, 'repository'),
+      defaultBranch: 'main',
+      assetStorePath: join(root, 'old-store'),
+    }))
+    const service = new CoreService({
+      appStore: new AppStore(join(root, 'state.json')),
+      configPath,
+      cacheRoot: join(root, 'cache'),
+    })
+
+    const preview = await service.previewAssetStoreMigration(join(root, 'new-store'))
+
+    expect(preview).not.toHaveProperty('id')
+    expect(preview.token).toMatch(/^[A-Za-z0-9._:-]+$/)
+    await rm(root, { recursive: true, force: true })
+  })
+
   it('manages install, freeze, thaw, and uninstall through the shared asset manifest', async () => {
     const root = await mkdtemp(join(tmpdir(), 'xc-desktop-managed-lifecycle-'))
     const repositoryRoot = join(root, 'repository')
