@@ -5,17 +5,21 @@ import AssetDetail from './components/AssetDetail.vue'
 import SourceSidebar from './components/SourceSidebar.vue'
 import ResourceExplorer from './components/ResourceExplorer.vue'
 import OperationDialog from './features/operations/OperationDialog.vue'
+import BatchOperationDialog from './features/operations/BatchOperationDialog.vue'
 import SettingsDialog from './features/settings/SettingsDialog.vue'
 import ThirdPartyRepositoryDialog from './features/repositories/ThirdPartyRepositoryDialog.vue'
 import RelinkSourceDialog from './features/repositories/RelinkSourceDialog.vue'
 import { useExplorerStore } from './stores/explorer'
 import { useOperationStore } from './stores/operation'
+import { useBatchOperationStore } from './stores/batch-operation'
 import { usePreferencesStore } from './stores/preferences'
 import { plainSource } from './app/types'
 import type { AssetRecord, AssetStatusLocation, OperationKind, SourceSelection, ThirdPartyRepositoryView } from '../../shared/ipc.js'
+import type { BatchActionKind } from './lib/asset-actions'
 
 const explorer = useExplorerStore()
 const operation = useOperationStore()
+const batchOperation = useBatchOperationStore()
 const preferences = usePreferencesStore()
 const settingsOpen = ref(false)
 const detailOpen = ref(false)
@@ -74,6 +78,20 @@ const openRelinkSource = (location: AssetStatusLocation): void => {
   relinkDialogOpen.value = true
 }
 
+const openBatchOperation = async (kind: BatchActionKind, assets: AssetRecord[]): Promise<void> => {
+  await batchOperation.open({
+    kind,
+    items: assets.map((asset) => ({
+      asset,
+      location: explorer.managementStatuses[asset.id]?.[0] ?? null,
+    })),
+    source: currentSource(),
+    projects: explorer.projects,
+    agents: explorer.agents,
+    onRescan: () => { void explorer.refreshCurrentSource() },
+  })
+}
+
 const addThirdPartyRepository = (): void => {
   editingRepository.value = null
   repositoryDialogOpen.value = true
@@ -100,6 +118,7 @@ onMounted(() => {
     <ResourceExplorer
       @asset-selected="detailOpen = true"
       @asset-action="openOperation"
+      @batch-action="openBatchOperation"
     />
     <ElDrawer
       v-model="detailOpen"
@@ -130,6 +149,7 @@ onMounted(() => {
       />
     </ElDrawer>
     <OperationDialog />
+    <BatchOperationDialog />
     <ThirdPartyRepositoryDialog
       v-model="repositoryDialogOpen"
       :repository="editingRepository"

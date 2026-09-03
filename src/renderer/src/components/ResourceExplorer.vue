@@ -32,7 +32,14 @@ const selectAsset = (assetId: string): void => {
 }
 
 watch(
-  () => [explorer.selectedSource.id, explorer.assetType],
+  () => [
+    explorer.selectedSource.id,
+    explorer.assetType,
+    explorer.query,
+    explorer.groupFilter,
+    explorer.statusFilter,
+    explorer.agentFilter,
+  ],
   () => { selectedAssetIds.value = [] },
 )
 </script>

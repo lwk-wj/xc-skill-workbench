@@ -178,6 +178,11 @@ describe('Vue resource explorer', () => {
     await user.click(await screen.findByRole('checkbox', { name: '选择 Skill One' }))
     expect(screen.getByText('已选择 1 项')).toBeInTheDocument()
 
+    await user.type(screen.getByRole('textbox', { name: '搜索资源' }), 'Skill')
+    expect(screen.queryByText('已选择 1 项')).toBeNull()
+    await user.clear(screen.getByRole('textbox', { name: '搜索资源' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 Skill One' }))
+
     await user.click(screen.getByRole('button', { name: /^Demo$/ }))
     await waitFor(() => expect(screen.getAllByText('call-api')).toHaveLength(2))
     await user.click(screen.getByRole('button', { name: /^中央仓库$/ }))
@@ -235,6 +240,24 @@ describe('Vue resource explorer', () => {
 
     expect(screen.queryByRole('dialog', { name: 'Skill One' })).toBeNull()
     expect(await screen.findByRole('dialog', { name: '安装资源' })).toBeInTheDocument()
+  })
+
+  it('opens one shared batch install dialog for multiple selected repository resources', async () => {
+    const user = userEvent.setup()
+    const api = makeApi()
+    const second = { ...skill, id: 'skill-two', name: 'Skill Two', path: '/central/skill-two', entryPath: '/central/skill-two/SKILL.md' }
+    vi.mocked(api.assets.scan).mockImplementation(async (source) => source.kind === 'central' ? [skill, second] : duplicates)
+    window.xcSkills = api as never
+    renderTestApp(App)
+
+    await user.click(await screen.findByRole('checkbox', { name: '选择 Skill One' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 Skill Two' }))
+    await user.click(screen.getByRole('button', { name: '批量安装' }))
+
+    expect(screen.queryByRole('dialog', { name: 'Skill One' })).toBeNull()
+    const dialog = await screen.findByRole('dialog', { name: '批量安装资源' })
+    expect(within(dialog).getByText('2 个资源 · 2 个 Agent · 4 项操作')).toBeInTheDocument()
+    expect(within(dialog).getByRole('combobox', { name: '目标范围' })).toBeInTheDocument()
   })
 
   it('renders third-party navigation and uses layout-aware repository filters', async () => {
