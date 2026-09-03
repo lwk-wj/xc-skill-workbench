@@ -3,11 +3,11 @@ import { computed } from 'vue'
 import { ElButton, ElDropdown, ElDropdownItem, ElDropdownMenu, ElTag } from 'element-plus'
 import type { AssetRecord, SourceSelection } from '../../../shared/ipc.js'
 import { assetStatusLabel } from '../lib/asset-status-label'
+import { overflowAssetActions, primaryAssetAction, type AssetAction } from '../lib/asset-actions'
 import emptyResourcesIllustration from '../assets/empty-resources.svg'
 import emptySearchIllustration from '../assets/empty-search.svg'
 
 type StatusLocation = Awaited<ReturnType<NonNullable<Window['xcSkills']>['assets']['statuses']>>[number]
-type RowAction = { kind: string; label: string }
 
 const props = withDefaults(defineProps<{
   assets: AssetRecord[]
@@ -56,28 +56,19 @@ const displayStatusType = (asset: AssetRecord): 'success' | 'warning' | 'danger'
   return entryStatusType(asset.entryState)
 }
 
-const primaryAction = (asset: AssetRecord): RowAction | null => {
-  if (props.sourceKind === 'central' || props.sourceKind === 'third-party') return { kind: 'install', label: '安装到…' }
-  const status = locationFor(asset)?.status.status
-  if (asset.type === 'skills' && (asset.entryState === 'frozen' || status === 'frozen')) return { kind: 'thaw', label: '解冻' }
-  if (status === 'locally_modified') return { kind: 'update-with-warning', label: '查看影响并更新' }
-  if (status === 'update_available') return { kind: 'update', label: '更新' }
-  if (asset.type === 'skills' && asset.entryState === 'active') return { kind: 'freeze', label: '冻结' }
-  return null
-}
+const primaryAction = (asset: AssetRecord): AssetAction | null => primaryAssetAction({
+  sourceKind: props.sourceKind,
+  asset,
+  location: locationFor(asset),
+})
 
-const overflowActions = (asset: AssetRecord): RowAction[] => {
-  if (props.sourceKind === 'central' || props.sourceKind === 'third-party' || !locationFor(asset)) return []
-  const primary = primaryAction(asset)
-  const status = locationFor(asset)?.status.status
-  return [
-    ...(status === 'source_unavailable' ? [{ kind: 'relink-source', label: '重新关联来源' }] : []),
-    ...(asset.type === 'skills' && asset.entryState === 'active' && primary?.kind !== 'freeze' ? [{ kind: 'freeze', label: '冻结' }] : []),
-    { kind: 'uninstall', label: '卸载' },
-  ]
-}
+const overflowActions = (asset: AssetRecord): AssetAction[] => overflowAssetActions({
+  sourceKind: props.sourceKind,
+  asset,
+  location: locationFor(asset),
+})
 
-const runAction = (action: RowAction, asset: AssetRecord): void => {
+const runAction = (action: AssetAction, asset: AssetRecord): void => {
   const location = locationFor(asset)
   if (props.sourceKind === 'central' || props.sourceKind === 'third-party') emit('action', action.kind, asset)
   else if (location) emit('action', action.kind, asset, location)
