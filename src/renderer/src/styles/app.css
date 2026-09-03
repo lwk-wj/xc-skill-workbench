@@ -2561,6 +2561,155 @@ h3 {
   gap: 12px;
 }
 
+/* Batch operations */
+
+.batch-operation-dialog.el-dialog {
+  display: flex;
+  max-height: calc(100vh - 48px);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-lg);
+}
+
+.batch-operation-dialog.el-dialog > .el-dialog__header {
+  flex: none;
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 18px 22px;
+}
+
+.batch-operation-dialog.el-dialog > .el-dialog__body {
+  display: grid;
+  min-height: 0;
+  gap: 16px;
+  padding: 20px 22px 22px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.batch-operation-dialog fieldset {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 12px;
+}
+
+.batch-operation-dialog legend {
+  color: var(--text-tertiary);
+  padding: 0 5px;
+  font-size: 11px;
+}
+
+.batch-operation-dialog .el-checkbox-group,
+.batch-operation-dialog .el-radio-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.batch-operation-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border-radius: 9px;
+  background: var(--accent-soft);
+  padding: 12px 14px;
+}
+
+.batch-operation-summary strong {
+  font-size: 14px;
+}
+
+.batch-operation-summary span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.batch-paths,
+.batch-planning-errors,
+.batch-result-group {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-muted);
+  padding: 12px 14px;
+}
+
+.batch-paths h3,
+.batch-planning-errors h3,
+.batch-result-group h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.batch-paths ul,
+.batch-planning-errors ul,
+.batch-result-group ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.batch-paths ul {
+  max-height: 190px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.batch-paths code {
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.batch-planning-errors {
+  border-color: color-mix(in srgb, var(--danger) 28%, var(--border));
+  background: var(--danger-soft);
+}
+
+.batch-planning-errors p,
+.batch-result-group p,
+.batch-progress-message {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.batch-planning-errors li,
+.batch-result-group li {
+  display: grid;
+  gap: 3px;
+}
+
+.batch-planning-errors li span,
+.batch-result-group li small {
+  color: var(--danger);
+}
+
+.batch-execution-status {
+  display: grid;
+  gap: 5px;
+}
+
+.batch-execution-status span {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.batch-operation-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 2px;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
