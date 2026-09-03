@@ -172,6 +172,21 @@ describe('Vue resource explorer', () => {
     expect(window.xcSkills.assets.detail).not.toHaveBeenCalled()
   })
 
+  it('clears batch selection when the resource context changes', async () => {
+    const user = userEvent.setup()
+    renderTestApp(App)
+    await user.click(await screen.findByRole('checkbox', { name: '选择 Skill One' }))
+    expect(screen.getByText('已选择 1 项')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /^Demo$/ }))
+    await waitFor(() => expect(screen.getAllByText('call-api')).toHaveLength(2))
+    await user.click(screen.getByRole('button', { name: /^中央仓库$/ }))
+    await screen.findByText('Skill One')
+
+    expect(screen.queryByText('已选择 1 项')).toBeNull()
+    expect(screen.getByRole('checkbox', { name: '选择 Skill One' })).not.toBeChecked()
+  })
+
   it('opens asset details in a drawer and preserves the selection when closed', async () => {
     const user = userEvent.setup()
     vi.mocked(window.xcSkills.assets.scan).mockResolvedValueOnce([{ ...skill, group: '' }])

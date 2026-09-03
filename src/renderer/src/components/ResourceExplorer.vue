@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import { RefreshRight } from '@element-plus/icons-vue'
 import { ElButton, ElDropdown, ElDropdownItem, ElDropdownMenu, ElInput, ElOption, ElSelect } from 'element-plus'
 import { useExplorerStore } from '../stores/explorer'
@@ -6,6 +7,7 @@ import AssetList from './AssetList.vue'
 import ErrorNotice from './ErrorNotice.vue'
 import type { AssetType } from '../app/types'
 import type { AssetRecord } from '../../../shared/ipc.js'
+import type { BatchActionKind } from '../lib/asset-actions'
 
 type StatusLocation = Awaited<ReturnType<NonNullable<Window['xcSkills']>['assets']['statuses']>>[number]
 
@@ -13,7 +15,9 @@ const explorer = useExplorerStore()
 const emit = defineEmits<{
   'asset-selected': []
   'asset-action': [kind: string, asset: AssetRecord, location?: StatusLocation]
+  'batch-action': [kind: BatchActionKind, assets: AssetRecord[]]
 }>()
+const selectedAssetIds = ref<string[]>([])
 const tabs: Array<{ value: AssetType; label: string }> = [
   { value: 'skills', label: 'Skills' },
   { value: 'rules', label: 'Rules' },
@@ -26,6 +30,11 @@ const selectAsset = (assetId: string): void => {
   explorer.selectedAssetId = assetId
   emit('asset-selected')
 }
+
+watch(
+  () => [explorer.selectedSource.id, explorer.assetType],
+  () => { selectedAssetIds.value = [] },
+)
 </script>
 
 <template>
@@ -90,6 +99,7 @@ const selectAsset = (assetId: string): void => {
     <AssetList
       :assets="explorer.visibleAssets"
       :selected-id="explorer.selectedAssetId"
+      v-model:selected-ids="selectedAssetIds"
       :source-kind="explorer.selectedSource.kind"
       :agent-name="explorer.agentName"
       :loading="explorer.loading"
@@ -101,6 +111,7 @@ const selectAsset = (assetId: string): void => {
       :management-statuses="explorer.managementStatuses"
       @select="selectAsset"
       @action="(kind, asset, location) => emit('asset-action', kind, asset, location)"
+      @batch-action="(kind, assets) => emit('batch-action', kind, assets)"
       @clear-filters="explorer.query = ''; explorer.groupFilter = 'all'; explorer.statusFilter = 'all'; explorer.agentFilter = 'all'"
     />
   </section>

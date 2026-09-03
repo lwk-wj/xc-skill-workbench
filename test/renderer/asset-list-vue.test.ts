@@ -19,7 +19,7 @@ const location = {
 }
 
 const baseProps = {
-  selectedId: null, agentName: () => 'Codex', loading: false, error: null, query: '', groupFilter: 'all', statusFilter: 'all', agentFilter: 'all',
+  selectedId: null, selectedIds: [] as string[], agentName: () => 'Codex', loading: false, error: null, query: '', groupFilter: 'all', statusFilter: 'all', agentFilter: 'all',
 }
 
 describe('AssetList operations', () => {
@@ -117,5 +117,48 @@ describe('AssetList operations', () => {
     expect(screen.getByRole('heading', { name: '没有找到匹配资源' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '清除筛选' }))
     expect(onClearFilters).toHaveBeenCalledOnce()
+  })
+
+  it('selects every resource in the current filtered result without opening details', async () => {
+    const user = userEvent.setup()
+    const apiOne = { ...active, id: 'skill-api-1', name: 'API One' }
+    const apiTwo = { ...active, id: 'skill-api-2', name: 'API Two' }
+    const hidden = { ...active, id: 'skill-form', name: 'Form Builder' }
+    const onUpdateSelectedIds = vi.fn()
+    const onSelect = vi.fn()
+    renderTestApp(AssetList, {
+      props: { ...baseProps, assets: [apiOne, apiTwo, hidden], sourceKind: 'central', query: 'api' },
+      attrs: { 'onUpdate:selectedIds': onUpdateSelectedIds, onSelect },
+    })
+
+    await user.click(screen.getByRole('checkbox', { name: '全选当前筛选结果' }))
+
+    expect(onUpdateSelectedIds).toHaveBeenLastCalledWith(['skill-api-1', 'skill-api-2'])
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('blocks a batch action when any selected resource has an incompatible state', () => {
+    const frozen = { ...active, id: 'codex:frozen', name: 'Frozen Skill', entryState: 'frozen' as const }
+    const frozenLocation = {
+      ...location,
+      path: frozen.path,
+      status: { ...location.status, status: 'frozen' as const },
+    }
+    renderTestApp(AssetList, { props: {
+      ...baseProps,
+      assets: [active, frozen],
+      selectedIds: [active.id, frozen.id],
+      sourceKind: 'project',
+      managementStatuses: {
+        [active.id]: [location],
+        [frozen.id]: [frozenLocation],
+      },
+    } })
+
+    expect(screen.getByText('已选择 2 项')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '批量冻结' })).toBeDisabled()
+    expect(screen.getByText('Frozen Skill：资源已经冻结')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '批量解冻' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '批量卸载' })).toBeEnabled()
   })
 })

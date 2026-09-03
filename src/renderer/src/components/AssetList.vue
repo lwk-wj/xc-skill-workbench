@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ElButton, ElDropdown, ElDropdownItem, ElDropdownMenu, ElTag } from 'element-plus'
+import { ElButton, ElCheckbox, ElDropdown, ElDropdownItem, ElDropdownMenu, ElTag } from 'element-plus'
 import type { AssetRecord, SourceSelection } from '../../../shared/ipc.js'
 import { assetStatusLabel } from '../lib/asset-status-label'
-import { overflowAssetActions, primaryAssetAction, type AssetAction } from '../lib/asset-actions'
+import {
+  batchActionEligibility,
+  overflowAssetActions,
+  primaryAssetAction,
+  type AssetAction,
+  type BatchActionKind,
+} from '../lib/asset-actions'
 import emptyResourcesIllustration from '../assets/empty-resources.svg'
 import emptySearchIllustration from '../assets/empty-search.svg'
 
@@ -12,6 +18,7 @@ type StatusLocation = Awaited<ReturnType<NonNullable<Window['xcSkills']>['assets
 const props = withDefaults(defineProps<{
   assets: AssetRecord[]
   selectedId: string | null
+  selectedIds?: string[]
   sourceKind: SourceSelection['kind']
   agentName: (agentId?: string) => string
   managementStatuses?: Record<string, StatusLocation[]>
@@ -21,11 +28,13 @@ const props = withDefaults(defineProps<{
   groupFilter: string
   statusFilter: string
   agentFilter: string
-}>(), { managementStatuses: () => ({}) })
+}>(), { managementStatuses: () => ({}), selectedIds: () => [] })
 
 const emit = defineEmits<{
   select: [id: string]
   action: [kind: string, asset: AssetRecord, location?: StatusLocation]
+  'update:selectedIds': [ids: string[]]
+  'batch-action': [kind: BatchActionKind, assets: AssetRecord[]]
   'clear-filters': []
 }>()
 
@@ -34,6 +43,53 @@ const filteredAssets = computed(() => props.assets
   .filter((asset) => props.groupFilter === 'all' || asset.group === props.groupFilter)
   .filter((asset) => props.statusFilter === 'all' || asset.entryState === props.statusFilter)
   .filter((asset) => props.agentFilter === 'all' || asset.agentId === props.agentFilter))
+
+const selectedIdSet = computed(() => new Set(props.selectedIds))
+const selectedAssets = computed(() => props.assets.filter((asset) => selectedIdSet.value.has(asset.id)))
+const filteredIds = computed(() => filteredAssets.value.map((asset) => asset.id))
+const allFilteredSelected = computed(() => filteredIds.value.length > 0 && filteredIds.value.every((id) => selectedIdSet.value.has(id)))
+const someFilteredSelected = computed(() => !allFilteredSelected.value && filteredIds.value.some((id) => selectedIdSet.value.has(id)))
+
+const batchActions = computed<{ kind: BatchActionKind; label: string }[]>(() => (
+  props.sourceKind === 'central' || props.sourceKind === 'third-party'
+    ? [{ kind: 'install', label: '批量安装' }]
+    : [
+        { kind: 'freeze', label: '批量冻结' },
+        { kind: 'thaw', label: '批量解冻' },
+        { kind: 'uninstall', label: '批量卸载' },
+      ]
+))
+
+const updateAssetSelection = (assetId: string, selected: boolean): void => {
+  const next = new Set(props.selectedIds)
+  if (selected) next.add(assetId)
+  else next.delete(assetId)
+  emit('update:selectedIds', [...next])
+}
+
+const updateFilteredSelection = (selected: boolean): void => {
+  const next = new Set(props.selectedIds)
+  for (const id of filteredIds.value) {
+    if (selected) next.add(id)
+    else next.delete(id)
+  }
+  emit('update:selectedIds', [...next])
+}
+
+const batchIssues = (action: BatchActionKind): string[] => selectedAssets.value.flatMap((asset) => {
+  const eligibility = batchActionEligibility({
+    action,
+    sourceKind: props.sourceKind,
+    asset,
+    location: locationFor(asset),
+  })
+  return eligibility.eligible ? [] : [`${asset.name}：${eligibility.reason}`]
+})
+
+const runBatchAction = (action: BatchActionKind): void => {
+  if (!selectedAssets.value.length || batchIssues(action).length) return
+  emit('batch-action', action, selectedAssets.value)
+}
 
 const entryStatusLabel = (status: AssetRecord['entryState']): string => ({
   active: '正常', frozen: '已冻结', conflict: '冲突', invalid: '无效',
@@ -89,7 +145,35 @@ const runAction = (action: AssetAction, asset: AssetRecord): void => {
     <p>换个关键词试试，或者清除当前的搜索和筛选条件。</p>
     <ElButton type="primary" plain @click="emit('clear-filters')">清除筛选</ElButton>
   </section>
-  <div v-else class="asset-list" role="list" aria-label="资源列表">
+  <div v-else class="asset-results">
+    <div class="asset-selection-toolbar" role="toolbar" aria-label="资源批量操作">
+      <ElCheckbox
+        :model-value="allFilteredSelected"
+        :indeterminate="someFilteredSelected"
+        aria-label="全选当前筛选结果"
+        @change="(checked) => updateFilteredSelection(Boolean(checked))"
+      >全选</ElCheckbox>
+      <span v-if="selectedAssets.length" class="asset-selection-count">已选择 {{ selectedAssets.length }} 项</span>
+      <div v-if="selectedAssets.length" class="asset-batch-actions">
+        <div v-for="batchAction in batchActions" :key="batchAction.kind" class="asset-batch-action">
+          <ElButton
+            :type="batchAction.kind === 'uninstall' ? 'danger' : 'primary'"
+            :plain="batchAction.kind !== 'uninstall'"
+            size="small"
+            :disabled="batchIssues(batchAction.kind).length > 0"
+            @click="runBatchAction(batchAction.kind)"
+          >{{ batchAction.label }}</ElButton>
+          <span
+            v-for="issue in batchIssues(batchAction.kind)"
+            :key="issue"
+            class="asset-batch-issue"
+          >{{ issue }}</span>
+        </div>
+        <ElButton text size="small" @click="emit('update:selectedIds', [])">清空选择</ElButton>
+      </div>
+    </div>
+
+    <div class="asset-list" role="list" aria-label="资源列表">
     <article
       v-for="asset in filteredAssets"
       :key="asset.id"
@@ -98,6 +182,13 @@ const runAction = (action: AssetAction, asset: AssetRecord): void => {
       :class="{ selected: asset.id === selectedId }"
       @click="emit('select', asset.id)"
     >
+      <div class="asset-row-selector" @click.stop>
+        <ElCheckbox
+          :model-value="selectedIdSet.has(asset.id)"
+          :aria-label="`选择 ${asset.name}`"
+          @change="(checked) => updateAssetSelection(asset.id, Boolean(checked))"
+        />
+      </div>
       <button class="asset-row-main" :aria-label="`查看 ${asset.name}`" @click.stop="emit('select', asset.id)">
         <span class="asset-copy">
           <span class="asset-title-line">
@@ -131,5 +222,6 @@ const runAction = (action: AssetAction, asset: AssetRecord): void => {
         </ElDropdown>
       </div>
     </article>
+    </div>
   </div>
 </template>
