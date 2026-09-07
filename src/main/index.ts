@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from 'electro
 import { join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
-import { BUILTIN_AGENTS } from 'xc-skills/core'
+import { BUILTIN_AGENTS, readConfig, resolveAssetStorePath } from 'xc-skills/core'
 import { createWindowOptions } from './window.js'
 import { AppStore } from './services/app-store.js'
 import { registerIpc } from './ipc/register-ipc.js'
@@ -10,6 +10,7 @@ import { CoreService } from './services/core-service.js'
 import { LogService } from './services/log-service.js'
 import { ThirdPartyRepositoryService } from './services/third-party-repository-service.js'
 import type { WindowBounds } from '../shared/ipc.js'
+import { repositoryCachePathForRoot, resourceRootFromAssetStore } from '../shared/resource-storage.js'
 
 const rendererUrl = process.env.ELECTRON_RENDERER_URL
 const rendererFile = join(__dirname, '../renderer/index.html')
@@ -85,17 +86,21 @@ app.whenReady().then(async () => {
   const userData = app.getPath('userData')
   const appStore = new AppStore(join(userData, 'state.json'))
   const log = new LogService(userData)
+  const configPath = e2eEnabled && process.env.XC_SKILLS_CONFIG_PATH
+    ? resolve(process.env.XC_SKILLS_CONFIG_PATH)
+    : join(homedir(), '.xc-skills-config.json')
+  const repositoryCacheRoot = async (): Promise<string> => {
+    const config = await readConfig(configPath)
+    return repositoryCachePathForRoot(resourceRootFromAssetStore(resolveAssetStorePath(config)))
+  }
   const thirdPartyRepositoryService = new ThirdPartyRepositoryService({
     appStore,
-    cacheRoot: join(userData, 'cache'),
+    cacheRoot: repositoryCacheRoot,
     log,
   })
   const coreService = new CoreService({
     appStore,
-    configPath: e2eEnabled && process.env.XC_SKILLS_CONFIG_PATH
-      ? resolve(process.env.XC_SKILLS_CONFIG_PATH)
-      : join(homedir(), '.xc-skills-config.json'),
-    cacheRoot: join(userData, 'cache'),
+    configPath,
     chooseDirectory: async () => {
       if (e2eEnabled && process.env.XC_SKILLS_DIALOG_PATH) return resolve(process.env.XC_SKILLS_DIALOG_PATH)
       const picked = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })

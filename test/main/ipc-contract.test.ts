@@ -216,6 +216,45 @@ describe('IPC contracts', () => {
     expect(executeLegacyInstallationMigration).toHaveBeenCalledWith('legacy-1')
   })
 
+  it('accepts only server-issued tokens for source-layout migration and entity repair', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-source-layout-ipc-'))
+    const handlers = new Map<string, (event: unknown, input?: unknown) => unknown>()
+    const sourcePreview = {
+      token: 'layout-1', moves: [], unresolved: [], symlinkCount: 0, copyCount: 0,
+      conflicts: [], expiresAt: '2026-09-01T10:00:00.000Z',
+    }
+    const repairPreview = {
+      installationId: 'install-1', entityId: 'entity-1', candidates: [{
+        candidateToken: 'candidate-1', repositoryLabel: 'Team Skills', sourceRelativePath: 'skills/demo',
+      }], expiresAt: '2026-09-01T10:00:00.000Z',
+    }
+    const executeSourceLayoutMigration = vi.fn(async () => sourcePreview)
+    const executeManagedEntityRepair = vi.fn(async () => ({
+      installationId: 'install-1', entityId: 'entity-2', fromRelativePath: 'legacy',
+      toRelativePath: 'team/skills/demo', rebuiltSymlinkCount: 1,
+    }))
+    registerIpc({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+      appStore: new AppStore(join(root, 'state.json')),
+      services: {
+        previewSourceLayoutMigration: vi.fn(async () => sourcePreview),
+        executeSourceLayoutMigration,
+        previewManagedEntityRepair: vi.fn(async () => repairPreview),
+        executeManagedEntityRepair,
+      },
+    })
+
+    await expect(handlers.get(Channels.repositoriesPreviewSourceLayoutMigration)?.({}, undefined)).resolves.toEqual(sourcePreview)
+    await expect(handlers.get(Channels.repositoriesExecuteSourceLayoutMigration)?.({}, { token: 'layout-1', path: '/tmp/forged' })).rejects.toThrow()
+    await expect(handlers.get(Channels.repositoriesExecuteSourceLayoutMigration)?.({}, 'layout-1')).resolves.toEqual(sourcePreview)
+    await expect(handlers.get(Channels.repositoriesPreviewManagedEntityRepair)?.({}, 'install-1')).resolves.toEqual(repairPreview)
+    await expect(handlers.get(Channels.repositoriesPreviewManagedEntityRepair)?.({}, { installationId: 'install-1' })).rejects.toThrow()
+    await expect(handlers.get(Channels.repositoriesExecuteManagedEntityRepair)?.({}, { candidateToken: 'candidate-1' })).rejects.toThrow()
+    await expect(handlers.get(Channels.repositoriesExecuteManagedEntityRepair)?.({}, 'candidate-1')).resolves.toMatchObject({ entityId: 'entity-2' })
+    expect(executeSourceLayoutMigration).toHaveBeenCalledWith('layout-1')
+    expect(executeManagedEntityRepair).toHaveBeenCalledWith('candidate-1')
+  })
+
   it('uses strict declarative channels for third-party repository management', async () => {
     const root = await mkdtemp(join(tmpdir(), 'xc-desktop-third-party-ipc-'))
     const handlers = new Map<string, (event: unknown, input?: unknown) => unknown>()

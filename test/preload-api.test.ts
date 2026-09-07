@@ -68,6 +68,22 @@ describe('preload repository API', () => {
     expect(electron.invoke).toHaveBeenCalledWith(Channels.repositoriesCurrent)
   })
 
+  it('forwards managed source-layout migration and repair through opaque tokens', async () => {
+    electron.invoke.mockResolvedValue({})
+
+    await api.repositories.previewSourceLayoutMigration()
+    await api.repositories.executeSourceLayoutMigration('layout-token')
+    await api.repositories.previewManagedEntityRepair('installation-1')
+    await api.repositories.executeManagedEntityRepair('candidate-token')
+
+    expect(electron.invoke.mock.calls).toEqual([
+      [Channels.repositoriesPreviewSourceLayoutMigration],
+      [Channels.repositoriesExecuteSourceLayoutMigration, 'layout-token'],
+      [Channels.repositoriesPreviewManagedEntityRepair, 'installation-1'],
+      [Channels.repositoriesExecuteManagedEntityRepair, 'candidate-token'],
+    ])
+  })
+
   it('forwards third-party repository management through dedicated channels', async () => {
     const input = { url: 'https://example.com/team/skills.git', name: 'Team Skills' }
     electron.invoke.mockResolvedValue([])

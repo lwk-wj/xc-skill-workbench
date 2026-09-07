@@ -6,6 +6,9 @@ import {
   RepositoryConfigInputSchema, RepositoryConfigUpdateResultSchema, SourceSelectionSchema, ThemePreferenceSchema,
   AssetStoreMigrationPreviewSchema,
   LegacyInstallationMigrationPreviewSchema,
+  SourceLayoutMigrationPreviewSchema,
+  ManagedEntityRepairPreviewSchema,
+  ManagedEntityRepairResultSchema,
   ThirdPartyRepositoryInputSchema, ThirdPartyRepositoryViewSchema,
   RelinkInstallationInputSchema,
   SourceConflictSchema,
@@ -17,6 +20,9 @@ import {
   type SourceConflict,
   type AssetStoreMigrationPreview,
   type LegacyInstallationMigrationPreview,
+  type SourceLayoutMigrationPreview,
+  type ManagedEntityRepairPreview,
+  type ManagedEntityRepairResult,
 } from '../../shared/ipc.js'
 import type { AppStore } from '../services/app-store.js'
 import type { CoreService } from '../services/core-service.js'
@@ -43,6 +49,10 @@ export interface IpcServices {
   executeAssetStoreMigration?: (token: string) => Promise<XcSkillsConfig>
   previewLegacyInstallationMigration?: () => Promise<LegacyInstallationMigrationPreview>
   executeLegacyInstallationMigration?: (token: string) => Promise<LegacyInstallationMigrationPreview>
+  previewSourceLayoutMigration?: () => Promise<SourceLayoutMigrationPreview>
+  executeSourceLayoutMigration?: (token: string) => Promise<SourceLayoutMigrationPreview>
+  previewManagedEntityRepair?: (installationId: string) => Promise<ManagedEntityRepairPreview>
+  executeManagedEntityRepair?: (candidateToken: string) => Promise<ManagedEntityRepairResult>
   listBranches?: () => Promise<RepositoryBranch[]>
   selectBranch?: (branch: string) => Promise<RepositoryView>
   setDefaultBranch?: (branch: string) => Promise<XcSkillsConfig>
@@ -89,6 +99,8 @@ export const registerIpc = ({ ipcMain, appStore, services: suppliedServices = {}
     getConfig: () => coreService.getConfig(), currentRepository: () => coreService.currentRepository(), updateConfig: (input) => coreService.updateConfig(input), listBranches: () => coreService.listBranches(), selectBranch: (branch) => coreService.selectBranch(branch), setDefaultBranch: (branch) => coreService.setDefaultBranch(branch), refresh: () => coreService.refresh(),
     previewAssetStoreMigration: (path) => coreService.previewAssetStoreMigration(path), executeAssetStoreMigration: (token) => coreService.executeAssetStoreMigration(token),
     previewLegacyInstallationMigration: () => coreService.previewLegacyInstallationMigration(), executeLegacyInstallationMigration: (token) => coreService.executeLegacyInstallationMigration(token),
+    previewSourceLayoutMigration: () => coreService.previewSourceLayoutMigration(), executeSourceLayoutMigration: (token) => coreService.executeSourceLayoutMigration(token),
+    previewManagedEntityRepair: (installationId) => coreService.previewManagedEntityRepair(installationId), executeManagedEntityRepair: (candidateToken) => coreService.executeManagedEntityRepair(candidateToken),
     listThirdPartyRepositories: () => coreService.listThirdPartyRepositories(), addThirdPartyRepository: (input) => coreService.addThirdPartyRepository(input), updateThirdPartyRepository: (id, input) => coreService.updateThirdPartyRepository(id, input), removeThirdPartyRepository: (id) => coreService.removeThirdPartyRepository(id), refreshThirdPartyRepository: (id) => coreService.refreshThirdPartyRepository(id),
     relinkInstallation: (input) => coreService.relinkInstallation(input),
     scan: (source) => coreService.scan(source), detail: (selection) => coreService.detail(selection), statuses: (selection) => coreService.statuses(selection),
@@ -166,6 +178,18 @@ export const registerIpc = ({ ipcMain, appStore, services: suppliedServices = {}
   ))
   invoke(Channels.repositoriesExecuteLegacyInstallationMigration, z.string().regex(/^[A-Za-z0-9._:-]+$/).min(1).max(200), async (token) => LegacyInstallationMigrationPreviewSchema.parse(
     services.executeLegacyInstallationMigration ? await services.executeLegacyInstallationMigration(token) : unsupported('repositories.executeLegacyInstallationMigration'),
+  ))
+  invoke(Channels.repositoriesPreviewSourceLayoutMigration, noInput, async () => SourceLayoutMigrationPreviewSchema.parse(
+    services.previewSourceLayoutMigration ? await services.previewSourceLayoutMigration() : unsupported('repositories.previewSourceLayoutMigration'),
+  ))
+  invoke(Channels.repositoriesExecuteSourceLayoutMigration, z.string().regex(/^[A-Za-z0-9._:-]+$/).min(1).max(200), async (token) => SourceLayoutMigrationPreviewSchema.parse(
+    services.executeSourceLayoutMigration ? await services.executeSourceLayoutMigration(token) : unsupported('repositories.executeSourceLayoutMigration'),
+  ))
+  invoke(Channels.repositoriesPreviewManagedEntityRepair, z.string().regex(/^[A-Za-z0-9._:-]+$/).min(1).max(200), async (installationId) => ManagedEntityRepairPreviewSchema.parse(
+    services.previewManagedEntityRepair ? await services.previewManagedEntityRepair(installationId) : unsupported('repositories.previewManagedEntityRepair'),
+  ))
+  invoke(Channels.repositoriesExecuteManagedEntityRepair, z.string().regex(/^[A-Za-z0-9._:-]+$/).min(1).max(200), async (candidateToken) => ManagedEntityRepairResultSchema.parse(
+    services.executeManagedEntityRepair ? await services.executeManagedEntityRepair(candidateToken) : unsupported('repositories.executeManagedEntityRepair'),
   ))
   invoke(Channels.repositoriesUpdateConfig, RepositoryConfigInputSchema, async (input) => {
     const result = services.updateConfig

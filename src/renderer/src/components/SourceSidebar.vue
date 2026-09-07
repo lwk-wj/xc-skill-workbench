@@ -11,7 +11,8 @@ const emit = defineEmits<{
   'add-third-party': []
   'edit-third-party': [repositoryId: string]
 }>()
-const primarySources = computed(() => explorer.sources.filter((source) => source.kind !== 'third-party'))
+const centralSources = computed(() => explorer.sources.filter((source) => source.kind === 'central'))
+const localSources = computed(() => explorer.sources.filter((source) => source.kind === 'global' || source.kind === 'project'))
 const thirdPartySources = computed(() => explorer.sources.filter((source) => source.kind === 'third-party'))
 
 const runRepositoryAction = (command: string, repositoryId: string): void => {
@@ -30,20 +31,13 @@ const runRepositoryAction = (command: string, repositoryId: string): void => {
       <span>XcSkills</span>
     </div>
     <nav class="source-navigation" aria-label="来源导航">
-      <div v-for="source in primarySources" :key="source.id" class="source-row">
+      <div v-for="source in centralSources" :key="source.id" class="source-row">
         <button
           class="source-button"
           :class="{ selected: explorer.selectedSource.id === source.id }"
           @click="explorer.selectSource(source)"
         >{{ source.label }}</button>
-        <button
-          v-if="source.kind === 'project'"
-          class="icon-button"
-          :aria-label="`移除项目 ${source.label}`"
-          @click="explorer.removeProject(source.projectId)"
-        >×</button>
       </div>
-
       <section class="source-section" aria-labelledby="third-party-heading">
         <div class="source-section-heading-row">
           <h2 id="third-party-heading">第三方仓库</h2>
@@ -79,6 +73,22 @@ const runRepositoryAction = (command: string, repositoryId: string): void => {
           </ElDropdown>
         </div>
       </section>
+
+      <div class="local-sources">
+        <div v-for="source in localSources" :key="source.id" class="source-row">
+          <button
+            class="source-button"
+            :class="{ selected: explorer.selectedSource.id === source.id }"
+            @click="explorer.selectSource(source)"
+          >{{ source.label }}</button>
+          <button
+            v-if="source.kind === 'project'"
+            class="icon-button"
+            :aria-label="`移除项目 ${source.label}`"
+            @click="explorer.removeProject(source.projectId)"
+          >×</button>
+        </div>
+      </div>
     </nav>
     <div class="sidebar-footer">
       <button class="add-project" aria-label="添加项目" @click="explorer.addProject()">＋ 添加项目</button>

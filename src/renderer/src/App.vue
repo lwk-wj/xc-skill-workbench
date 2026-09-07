@@ -6,6 +6,7 @@ import SourceSidebar from './components/SourceSidebar.vue'
 import ResourceExplorer from './components/ResourceExplorer.vue'
 import OperationDialog from './features/operations/OperationDialog.vue'
 import BatchOperationDialog from './features/operations/BatchOperationDialog.vue'
+import ProjectInstallDialog from './features/operations/ProjectInstallDialog.vue'
 import SettingsDialog from './features/settings/SettingsDialog.vue'
 import ThirdPartyRepositoryDialog from './features/repositories/ThirdPartyRepositoryDialog.vue'
 import RelinkSourceDialog from './features/repositories/RelinkSourceDialog.vue'
@@ -24,6 +25,7 @@ const preferences = usePreferencesStore()
 const settingsOpen = ref(false)
 const detailOpen = ref(false)
 const repositoryDialogOpen = ref(false)
+const projectInstallOpen = ref(false)
 const editingRepository = ref<ThirdPartyRepositoryView | null>(null)
 const relinkDialogOpen = ref(false)
 const relinkAsset = ref<AssetRecord | null>(null)
@@ -34,6 +36,21 @@ const assetMetadata = computed(() => {
   if (!explorer.selectedAsset) return ''
   const version = explorer.selectedAsset.version ? `v${explorer.selectedAsset.version.replace(/^v/, '')}` : '无版本'
   return [explorer.selectedAsset.group?.trim(), assetKindLabel.value, version].filter(Boolean).join(' · ')
+})
+const currentProject = computed(() => {
+  const source = explorer.selectedSource
+  return source.kind === 'project'
+    ? explorer.projects.find((project) => project.id === source.projectId) ?? null
+    : null
+})
+const localInstallTarget = computed(() => {
+  const source = explorer.selectedSource
+  if (source.kind === 'global') return { scope: 'global' as const, projectId: undefined, name: '全局' }
+  if (source.kind === 'project') {
+    const project = explorer.projects.find((entry) => entry.id === source.projectId)
+    if (project) return { scope: 'project' as const, projectId: project.id, name: project.name }
+  }
+  return null
 })
 
 watch(() => explorer.selectedAsset, (asset) => {
@@ -92,6 +109,27 @@ const openBatchOperation = async (kind: BatchActionKind, assets: AssetRecord[]):
   })
 }
 
+const openLocalInstallDialog = (): void => {
+  if (!localInstallTarget.value) return
+  projectInstallOpen.value = true
+}
+
+const installIntoCurrentTarget = async ({ source, assets }: { source: SourceSelection; assets: AssetRecord[] }): Promise<void> => {
+  const target = localInstallTarget.value
+  if (!target) return
+  await batchOperation.open({
+    kind: 'install',
+    items: assets.map((asset) => ({ asset, location: null })),
+    source,
+    projects: explorer.projects,
+    agents: explorer.agents,
+    defaultScope: target.scope,
+    defaultProjectId: target.projectId,
+    lockTarget: true,
+    onRescan: () => { void explorer.refreshCurrentSource() },
+  })
+}
+
 const addThirdPartyRepository = (): void => {
   editingRepository.value = null
   repositoryDialogOpen.value = true
@@ -119,6 +157,7 @@ onMounted(() => {
       @asset-selected="detailOpen = true"
       @asset-action="openOperation"
       @batch-action="openBatchOperation"
+      @install-new-resource="openLocalInstallDialog"
     />
     <ElDrawer
       v-model="detailOpen"
@@ -150,6 +189,14 @@ onMounted(() => {
     </ElDrawer>
     <OperationDialog />
     <BatchOperationDialog />
+    <ProjectInstallDialog
+      v-model="projectInstallOpen"
+      :sources="explorer.sources"
+      :asset-type="explorer.assetType"
+      :target-scope="localInstallTarget?.scope ?? 'project'"
+      :target-name="localInstallTarget?.name ?? ''"
+      @install="installIntoCurrentTarget"
+    />
     <ThirdPartyRepositoryDialog
       v-model="repositoryDialogOpen"
       :repository="editingRepository"

@@ -120,8 +120,14 @@
 }
 
 .source-section {
-  margin-top: 22px;
-  padding-top: 17px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+}
+
+.local-sources {
+  margin-top: 14px;
+  padding-top: 12px;
   border-top: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
 }
 
@@ -688,12 +694,13 @@ h3 {
 
 .asset-selection-toolbar {
   display: flex;
-  min-height: 48px;
+  min-height: 50px;
   flex: none;
   align-items: center;
   gap: 12px;
   border-bottom: 1px solid var(--border);
-  padding: 7px 2px;
+  background: var(--surface);
+  padding: 8px 14px;
 }
 
 .asset-selection-count {
@@ -706,7 +713,6 @@ h3 {
 .asset-batch-actions {
   display: flex;
   min-width: 0;
-  flex: 1;
   align-items: center;
   gap: 8px;
 }
@@ -718,52 +724,73 @@ h3 {
   gap: 7px;
 }
 
-.asset-batch-issue {
-  max-width: 220px;
-  overflow: hidden;
-  color: var(--danger);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.asset-list {
-  position: relative;
-  z-index: 0;
-  display: grid;
+.asset-table {
   min-height: 0;
   flex: 1;
-  align-content: start;
-  gap: 6px;
-  margin-right: -24px;
-  overflow-y: auto;
+  --el-table-bg-color: transparent;
+  --el-table-border-color: var(--border);
+  --el-table-header-bg-color: color-mix(in srgb, var(--surface-muted) 68%, transparent);
+  --el-table-header-text-color: var(--text-secondary);
+  --el-table-row-hover-bg-color: var(--surface-hover);
+  --el-table-text-color: var(--text-primary);
+}
+
+.asset-table::before,
+.asset-table .el-table__inner-wrapper::before {
+  display: none;
+}
+
+.asset-table .el-table__header-wrapper th.el-table__cell {
+  height: 42px;
+  padding: 0;
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.asset-table .el-table__body-wrapper {
   overscroll-behavior: contain;
-  padding: 15px 18px 36px 0;
   scrollbar-gutter: stable;
 }
 
-.asset-row {
-  position: relative;
+.asset-table .el-table__body td.el-table__cell {
+  height: 86px;
+  padding: 0;
+  border-bottom-color: color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.asset-table .el-table__cell .cell {
+  min-width: 0;
+  padding: 0 12px;
+}
+
+.asset-table .el-table-column--selection .cell {
   display: flex;
-  width: 100%;
-  min-height: 62px;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  background: transparent;
-  color: var(--text-primary);
-  padding: 12px 13px 12px 15px;
-  text-align: left;
-  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+  justify-content: center;
+  padding: 0;
+}
+
+.asset-table .el-checkbox {
+  height: 32px;
+  margin: 0;
+}
+
+.asset-table .asset-table-row {
+  transition: background 140ms ease, box-shadow 140ms ease;
+}
+
+.asset-table .asset-table-row.selected > td.el-table__cell {
+  background: var(--selection);
+}
+
+.asset-table .asset-table-row.selected > td.el-table__cell:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .asset-row-main {
   display: flex;
+  width: 100%;
   min-width: 0;
-  flex: 1;
-  align-self: stretch;
   align-items: center;
   border: 0;
   background: transparent;
@@ -772,15 +799,10 @@ h3 {
   text-align: left;
 }
 
-.asset-row-selector {
-  display: flex;
-  flex: none;
-  align-items: center;
-}
-
 .asset-row-management {
   display: flex;
   flex: none;
+  justify-content: flex-end;
   align-items: center;
   gap: 8px;
 }
@@ -800,22 +822,21 @@ h3 {
   letter-spacing: 1px;
 }
 
-.asset-row::before {
-  position: absolute;
-  top: 12px;
-  bottom: 12px;
-  left: 0;
-  width: 3px;
-  border-radius: 0 99px 99px 0;
-  background: transparent;
-  content: "";
-  transition: background 140ms ease;
-}
-
-.asset-title-line {
+.asset-name-line,
+.asset-tag-line {
   display: flex;
   min-width: 0;
   align-items: center;
+}
+
+.asset-tag-line {
+  min-height: 22px;
+  flex-wrap: wrap;
+  align-content: center;
+  gap: 6px;
+}
+
+.asset-name-line {
   gap: 8px;
 }
 
@@ -825,6 +846,30 @@ h3 {
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+.installation-method-tag {
+  flex: none;
+  border-radius: 999px;
+  font-weight: 620;
+}
+
+.installation-method-tag.is-symlink {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 64%, var(--surface));
+  color: var(--accent);
+}
+
+.installation-method-tag.is-copy {
+  border-color: color-mix(in srgb, var(--success) 20%, var(--border));
+  background: color-mix(in srgb, var(--success-soft) 58%, var(--surface));
+  color: var(--success);
+}
+
+.installation-method-tag.is-unmanaged {
+  border-color: var(--border);
+  background: var(--surface-muted);
+  color: var(--text-tertiary);
 }
 
 .status-tag {
@@ -851,37 +896,23 @@ h3 {
   color: var(--danger);
 }
 
-.asset-row:hover {
-  border-color: var(--border);
-  background: var(--surface-hover);
-}
-
-.asset-row.selected {
-  border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
-  background: var(--selection);
-  box-shadow: var(--shadow-sm);
-}
-
-.asset-row.selected::before {
-  background: var(--accent);
-}
-
 .asset-copy {
   display: grid;
   min-width: 0;
-  gap: 4px;
+  gap: 3px;
 }
 
 .asset-copy strong {
   overflow: hidden;
-  font-size: 13.5px;
+  font-size: 15px;
   font-weight: 650;
+  line-height: 1.25;
   letter-spacing: -0.008em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.asset-copy small {
+.asset-meta-line {
   overflow: hidden;
   color: var(--text-tertiary);
   font-size: 11.5px;
@@ -1043,7 +1074,7 @@ h3 {
 }
 
 .error-notice button,
-.settings-section button,
+.settings-section .el-button,
 .form-actions button,
 .settings-footer button,
 .status-actions button,
@@ -1060,7 +1091,7 @@ h3 {
 }
 
 .error-notice button:hover,
-.settings-section button:hover,
+.settings-section .el-button:hover,
 .form-actions button:hover,
 .settings-footer button:hover,
 .status-actions button:hover,
@@ -2446,6 +2477,31 @@ h3 {
   grid-column: 1 / -1;
 }
 
+.operation-target-lock {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 3px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border-radius: 9px;
+  background: var(--accent-soft);
+  padding: 12px 14px;
+}
+
+.operation-target-lock span {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.operation-target-lock strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.operation-target-lock small {
+  color: var(--text-secondary);
+  font-size: 11.5px;
+}
+
 .operation-dialog fieldset label {
   display: flex;
   align-items: center;
@@ -2588,6 +2644,157 @@ h3 {
   padding: 20px 22px 22px;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+.project-install-dialog.el-dialog {
+  display: flex;
+  max-height: calc(100vh - 48px);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-lg);
+}
+
+.project-install-dialog.el-dialog > .el-dialog__header {
+  flex: none;
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 18px 22px;
+}
+
+.project-install-dialog.el-dialog > .el-dialog__body {
+  display: grid;
+  min-height: 0;
+  gap: 15px;
+  padding: 20px 22px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.project-install-dialog.el-dialog > .el-dialog__footer {
+  flex: none;
+  border-top: 1px solid var(--border);
+  padding: 14px 22px;
+}
+
+.project-install-target {
+  display: grid;
+  gap: 4px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 13%, transparent), transparent 42%),
+    var(--accent-soft);
+  padding: 12px 14px;
+}
+
+.project-install-target span,
+.project-install-target small {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.project-install-target strong {
+  color: var(--text-primary);
+  font-size: 15px;
+}
+
+.project-install-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 0.75fr) minmax(220px, 1.25fr);
+  gap: 12px;
+}
+
+.project-install-controls label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.project-install-type-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.project-install-type-tabs button {
+  position: relative;
+  border: 0;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  padding: 8px 12px 10px;
+  font-weight: 650;
+}
+
+.project-install-type-tabs button[aria-selected="true"] {
+  color: var(--accent);
+}
+
+.project-install-type-tabs button[aria-selected="true"]::after {
+  position: absolute;
+  right: 10px;
+  bottom: -1px;
+  left: 10px;
+  height: 2px;
+  border-radius: 99px;
+  background: var(--accent);
+  content: "";
+}
+
+.project-install-table.asset-table {
+  min-height: 360px;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.project-install-resource {
+  display: grid;
+  gap: 4px;
+}
+
+.project-install-resource strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.project-install-resource small,
+.muted {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.project-install-empty {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--text-tertiary);
+  background: var(--surface-muted);
+}
+
+.project-install-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.project-install-footer > span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.project-install-footer > div {
+  display: flex;
+  gap: 8px;
 }
 
 .batch-operation-dialog fieldset {

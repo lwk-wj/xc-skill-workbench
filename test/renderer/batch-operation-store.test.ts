@@ -5,13 +5,13 @@ import { useBatchOperationStore } from '../../src/renderer/src/stores/batch-oper
 import type { AssetRecord, AssetStatusLocation, OperationPlan, OperationResult } from '../../src/shared/ipc.js'
 
 const assets: AssetRecord[] = [
-  { id: 'skill-one', type: 'skills', name: 'Skill One', group: 'backend', path: '/repo/skill-one', entryPath: '/repo/skill-one/SKILL.md', entryState: 'active', description: '', version: '1.0.0' },
-  { id: 'skill-two', type: 'skills', name: 'Skill Two', group: 'backend', path: '/repo/skill-two', entryPath: '/repo/skill-two/SKILL.md', entryState: 'active', description: '', version: '1.0.0' },
+  { id: 'skill-one', type: 'skills', name: 'Skill One', group: 'backend', sourceRelativePath: 'backend/skills/skill-one', path: '/repo/skill-one', entryPath: '/repo/skill-one/SKILL.md', entryState: 'active', description: '', version: '1.0.0' },
+  { id: 'skill-two', type: 'skills', name: 'Skill Two', group: 'backend', sourceRelativePath: 'backend/skills/skill-two', path: '/repo/skill-two', entryPath: '/repo/skill-two/SKILL.md', entryState: 'active', description: '', version: '1.0.0' },
 ]
 const projects = [{ id: 'proj', name: 'Demo', path: '/project' }]
 const agents = [
-  { id: 'codex', name: 'Codex', projectBaseDir: '.codex', globalBaseDir: '/global/.codex', assetDirs: { skills: 'skills', rules: 'rules', workflows: 'workflows' }, builtIn: true, enabled: true },
   { id: 'claude-code', name: 'Claude Code', projectBaseDir: '.claude', globalBaseDir: '/global/.claude', assetDirs: { skills: 'skills', rules: 'rules', workflows: 'workflows' }, builtIn: true, enabled: true },
+  { id: 'codex', name: 'Codex', projectBaseDir: '.codex', globalBaseDir: '/global/.codex', assetDirs: { skills: 'skills', rules: 'rules', workflows: 'workflows' }, builtIn: true, enabled: true },
 ]
 
 const makePlan = (id: string, asset = assets[0]!, agentId = 'codex'): OperationPlan => ({
@@ -37,7 +37,7 @@ const currentStatus = (): AssetStatusLocation['status'] => ({
 describe('batch operation store', () => {
   beforeEach(() => setActivePinia(createPinia()))
 
-  it('plans every selected resource against the same project, agents, and method', async () => {
+  it('defaults batch installs to global Codex symlinks and orders Codex first', async () => {
     const plan = vi.fn()
       .mockImplementation(async (request) => makePlan(`plan-${request.asset.assetId}-${request.target.agentId}`, assets.find((asset) => asset.id === request.asset.assetId), request.target.agentId))
     window.xcSkills = { operations: { inspectSourceConflict: vi.fn().mockResolvedValue(null), plan, execute: vi.fn(), cancel: vi.fn(), onProgress: vi.fn(() => vi.fn()) } } as never
@@ -48,18 +48,46 @@ describe('batch operation store', () => {
       source: { kind: 'central' }, projects, agents,
     })
 
-    expect(store.scope).toBe('project')
+    expect(store.scope).toBe('global')
+    expect(store.selectedAgents).toEqual(['codex'])
+    expect(store.method).toBe('symlink')
+    expect(store.enabledAgents.map((agent) => agent.id)).toEqual(['codex', 'claude-code'])
     expect(plan.mock.calls.map(([request]) => request.target)).toEqual([
-      { scope: 'project', projectId: 'proj', agentId: 'codex' },
-      { scope: 'project', projectId: 'proj', agentId: 'claude-code' },
-      { scope: 'project', projectId: 'proj', agentId: 'codex' },
-      { scope: 'project', projectId: 'proj', agentId: 'claude-code' },
+      { scope: 'global', agentId: 'codex' },
+      { scope: 'global', agentId: 'codex' },
     ])
-    expect(plan.mock.calls.every(([request]) => request.method === 'copy')).toBe(true)
+    expect(plan.mock.calls.every(([request]) => request.method === 'symlink')).toBe(true)
     expect(store.planEntries.map((entry) => `${entry.asset.name}:${entry.agentName}`)).toEqual([
-      'Skill One:Codex', 'Skill One:Claude Code', 'Skill Two:Codex', 'Skill Two:Claude Code',
+      'Skill One:Codex', 'Skill Two:Codex',
     ])
     expect(store.canConfirm).toBe(true)
+  })
+
+  it('can lock batch installs to the current project target', async () => {
+    const plan = vi.fn()
+      .mockImplementation(async (request) => makePlan(`plan-${request.asset.assetId}-${request.target.agentId}`, assets.find((asset) => asset.id === request.asset.assetId), request.target.agentId))
+    window.xcSkills = { operations: { inspectSourceConflict: vi.fn().mockResolvedValue(null), plan, execute: vi.fn(), cancel: vi.fn(), onProgress: vi.fn(() => vi.fn()) } } as never
+    const store = useBatchOperationStore()
+
+    await store.open({
+      kind: 'install',
+      items: [{ asset: assets[0]!, location: null }],
+      source: { kind: 'central' },
+      projects,
+      agents,
+      defaultScope: 'project',
+      defaultProjectId: 'proj',
+      lockTarget: true,
+    })
+
+    expect(store.scope).toBe('project')
+    expect(store.projectId).toBe('proj')
+    expect(store.targetLocked).toBe(true)
+    expect(store.targetLabel).toBe('Demo')
+    expect(plan).toHaveBeenCalledWith(expect.objectContaining({
+      target: { scope: 'project', projectId: 'proj', agentId: 'codex' },
+      method: 'symlink',
+    }))
   })
 
   it('uses exact installed locations and blocks confirmation when one is missing', async () => {
@@ -102,6 +130,75 @@ describe('batch operation store', () => {
     expect(store.stage).toBe('done')
     expect(onRescan).toHaveBeenCalledOnce()
     expect(onRescan).toHaveBeenCalledWith(['/done'])
+  })
+
+  it('migrates a recoverable version 2 store before executing the first batch installation', async () => {
+    const events: string[] = []
+    const preview = {
+      token: 'migration-token',
+      moves: [{
+        entityId: 'old-entity',
+        fromRelativePath: 'xcSkill/skills/common/demo',
+        toRelativePath: 'xcSkill/skills/demo',
+        sourceRelativePath: 'skills/demo',
+      }],
+      unresolved: [],
+      symlinkCount: 0,
+      copyCount: 1,
+      conflicts: [],
+      expiresAt: '2026-09-04T04:00:00.000Z',
+    }
+    const plan = vi.fn().mockResolvedValue(makePlan('plan-1'))
+    const executeSourceLayoutMigration = vi.fn().mockImplementation(async () => {
+      events.push('migration')
+      return { ...preview, token: 'complete-token', moves: [] }
+    })
+    const execute = vi.fn().mockImplementation(async () => {
+      events.push('installation')
+      return { planId: 'plan-1', status: 'completed', affectedPaths: ['/done'], residualPaths: [] } satisfies OperationResult
+    })
+    window.xcSkills = {
+      repositories: {
+        previewSourceLayoutMigration: vi.fn().mockResolvedValue(preview),
+        executeSourceLayoutMigration,
+      },
+      operations: {
+        inspectSourceConflict: vi.fn().mockResolvedValue(null),
+        plan,
+        execute,
+        cancel: vi.fn(),
+        onProgress: vi.fn(() => vi.fn()),
+      },
+    } as never
+    const store = useBatchOperationStore()
+    await store.open({ kind: 'install', items: [{ asset: assets[0]!, location: null }], source: { kind: 'central' }, projects, agents: [agents[0]!] })
+    store.confirmPreview()
+    store.confirmExecution()
+
+    await store.executeAll()
+
+    expect(events).toEqual(['migration', 'installation'])
+    expect(executeSourceLayoutMigration).toHaveBeenCalledWith('migration-token')
+    expect(store.executionEntries[0]?.status).toBe('completed')
+  })
+
+  it('blocks batch confirmation when the managed store migration cannot be checked', async () => {
+    window.xcSkills = {
+      repositories: {
+        previewSourceLayoutMigration: vi.fn().mockRejectedValue(new Error('仓库不可访问')),
+      },
+      operations: {
+        inspectSourceConflict: vi.fn().mockResolvedValue(null),
+        plan: vi.fn().mockResolvedValue(makePlan('plan-1')),
+        execute: vi.fn(), cancel: vi.fn(), onProgress: vi.fn(() => vi.fn()),
+      },
+    } as never
+    const store = useBatchOperationStore()
+
+    await store.open({ kind: 'install', items: [{ asset: assets[0]!, location: null }], source: { kind: 'central' }, projects, agents: [agents[0]!] })
+
+    expect(store.error).toBe('仓库不可访问')
+    expect(store.canConfirm).toBe(false)
   })
 
   it('cancels only the active plan and leaves the remaining plans unexecuted', async () => {

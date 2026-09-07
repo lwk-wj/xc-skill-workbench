@@ -88,22 +88,28 @@ describe('Vue settings', () => {
     expect(removeCustom).toHaveBeenCalledWith('demo')
   })
 
-  it('switches repository sources, chooses a local directory, and saves normalized values', async () => {
+  it('uses a remote repository and stores its managed resources below the selected root', async () => {
     const user = userEvent.setup()
+    vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as never)
     const onSaved = vi.fn()
     const updateConfig = vi.fn(async (input) => ({
       config: input,
       repository: {
         branch: input.defaultBranch,
-        kind: 'local-worktree' as const,
-        allowSymlink: true,
+        kind: 'branch-cache' as const,
+        allowSymlink: false,
         stale: false,
         cachedAt: null,
       },
     }))
     window.xcSkills = {
       repositories: {
-        chooseLocalPath: vi.fn().mockResolvedValue('/tmp/chosen'),
+        chooseAssetStorePath: vi.fn().mockResolvedValue('/tmp/chosen-root'),
+        previewAssetStoreMigration: vi.fn().mockResolvedValue({
+          token: 'migration-1', fromPath: '/tmp/old-root/store', toPath: '/tmp/chosen-root/store',
+          entityCount: 0, symlinkTargets: [], copyTargets: [], conflicts: [], expiresAt: new Date().toISOString(),
+        }),
+        executeAssetStoreMigration: vi.fn().mockResolvedValue({ assetStorePath: '/tmp/chosen-root/store' }),
         updateConfig,
       },
     } as never
@@ -111,36 +117,37 @@ describe('Vue settings', () => {
       props: {
         config: {
           mode: 'remote',
-          repoPath: '/tmp/local',
+          repoPath: '/tmp/legacy-local',
           remoteUrl: 'https://example.com/old.git',
           defaultBranch: 'main',
           defaultGroups: [' backend ', 'backend'],
+          assetStorePath: '/tmp/old-root/store',
         },
         onSaved,
       },
     })
 
     expect(screen.getByLabelText('远程仓库 URL')).toHaveValue('https://example.com/old.git')
+    expect(screen.queryByLabelText('仓库模式')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('本地仓库路径')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('资源存储目录')).toHaveValue('/tmp/old-root')
     expect(screen.getByRole('button', { name: '保存并刷新' })).toBeDisabled()
 
-    await user.click(screen.getByRole('radio', { name: '本地' }))
-    expect(screen.getByLabelText('本地仓库路径')).toHaveValue('/tmp/local')
-    expect(screen.queryByLabelText('远程仓库 URL')).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '选择文件夹' }))
-    expect(screen.getByLabelText('本地仓库路径')).toHaveValue('/tmp/chosen')
+    await user.click(screen.getByRole('button', { name: '选择资源存储目录' }))
+    expect(screen.getByLabelText('资源存储目录')).toHaveValue('/tmp/chosen-root')
     await user.click(screen.getByRole('button', { name: '保存并刷新' }))
 
     await waitFor(() => expect(updateConfig).toHaveBeenCalledWith({
-      mode: 'local',
-      repoPath: '/tmp/chosen',
+      mode: 'remote',
+      repoPath: '/tmp/legacy-local',
       remoteUrl: 'https://example.com/old.git',
       defaultBranch: 'main',
       defaultGroups: ['backend'],
+      assetStorePath: '/tmp/chosen-root/store',
     }))
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({
-      mode: 'local',
-      repoPath: '/tmp/chosen',
+      mode: 'remote',
+      assetStorePath: '/tmp/chosen-root/store',
     }))
     expect(screen.getByRole('button', { name: '保存并刷新' })).toBeDisabled()
   })
@@ -195,34 +202,60 @@ describe('Vue settings', () => {
     const user = userEvent.setup()
     vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue({ action: 'confirm', value: '' } as never)
     const previewAssetStoreMigration = vi.fn().mockResolvedValue({
-      token: 'migration-1', fromPath: '/tmp/old-store', toPath: '/tmp/new-store', entityCount: 3,
+      token: 'migration-1', fromPath: '/tmp/old-root/store', toPath: '/tmp/new-root/store', entityCount: 3,
       symlinkTargets: ['/tmp/project/.codex/skills/demo'], copyTargets: ['/tmp/project/.claude/skills/demo'],
       conflicts: [], expiresAt: '2026-09-01T10:00:00.000Z',
     })
-    const executeAssetStoreMigration = vi.fn().mockResolvedValue({ assetStorePath: '/tmp/new-store' })
+    const executeAssetStoreMigration = vi.fn().mockResolvedValue({ assetStorePath: '/tmp/new-root/store' })
     const updateConfig = vi.fn(async (input) => ({
       config: input,
       repository: { branch: 'main', kind: 'local-worktree' as const, allowSymlink: true, stale: false, cachedAt: null },
     }))
     window.xcSkills = {
       repositories: {
-        chooseAssetStorePath: vi.fn().mockResolvedValue('/tmp/new-store'),
+        chooseAssetStorePath: vi.fn().mockResolvedValue('/tmp/new-root'),
         previewAssetStoreMigration,
         executeAssetStoreMigration,
         updateConfig,
       },
     } as never
     renderTestApp(RepositoryConfigForm, { props: { config: {
-      mode: 'local', repoPath: '/tmp/catalog', remoteUrl: '', defaultBranch: 'main', defaultGroups: [], assetStorePath: '/tmp/old-store',
+      mode: 'remote', repoPath: '', remoteUrl: 'https://example.com/repo.git', defaultBranch: 'main', defaultGroups: [], assetStorePath: '/tmp/old-root/store',
     } } })
 
     await user.click(screen.getByRole('button', { name: '选择资源存储目录' }))
     await user.click(screen.getByRole('button', { name: '保存并刷新' }))
 
-    await waitFor(() => expect(previewAssetStoreMigration).toHaveBeenCalledWith('/tmp/new-store'))
+    await waitFor(() => expect(previewAssetStoreMigration).toHaveBeenCalledWith('/tmp/new-root/store'))
     expect(ElMessageBox.confirm).toHaveBeenCalledWith(expect.stringMatching(/3 个实体.*1 个软链接/), '确认迁移资源目录', expect.any(Object))
     expect(executeAssetStoreMigration).toHaveBeenCalledWith('migration-1')
-    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({ assetStorePath: '/tmp/new-store' }))
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({ assetStorePath: '/tmp/new-root/store' }))
+  })
+
+  it('offers to move a legacy direct resource directory into its store child', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as never)
+    const previewAssetStoreMigration = vi.fn().mockResolvedValue({
+      token: 'migration-legacy', fromPath: '/tmp/resources', toPath: '/tmp/resources/store', entityCount: 1,
+      symlinkTargets: [], copyTargets: [], conflicts: [], expiresAt: new Date().toISOString(),
+    })
+    const executeAssetStoreMigration = vi.fn().mockResolvedValue({ assetStorePath: '/tmp/resources/store' })
+    const updateConfig = vi.fn(async (input) => ({
+      config: input,
+      repository: { branch: 'main', kind: 'branch-cache' as const, allowSymlink: false, stale: false, cachedAt: null },
+    }))
+    window.xcSkills = { repositories: { previewAssetStoreMigration, executeAssetStoreMigration, updateConfig } } as never
+    renderTestApp(RepositoryConfigForm, { props: { config: {
+      mode: 'remote', remoteUrl: 'https://example.com/repo.git', defaultBranch: 'main', defaultGroups: [], assetStorePath: '/tmp/resources',
+    } } })
+
+    expect(screen.getByLabelText('资源存储目录')).toHaveValue('/tmp/resources')
+    expect(screen.getByRole('button', { name: '保存并刷新' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: '保存并刷新' }))
+
+    await waitFor(() => expect(previewAssetStoreMigration).toHaveBeenCalledWith('/tmp/resources/store'))
+    expect(executeAssetStoreMigration).toHaveBeenCalledWith('migration-legacy')
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({ assetStorePath: '/tmp/resources/store' }))
   })
 
   it('shows and confirms the shared-manifest migration for legacy installs', async () => {
@@ -248,6 +281,32 @@ describe('Vue settings', () => {
 
     await waitFor(() => expect(executeLegacyInstallationMigration).toHaveBeenCalledWith('legacy-token'))
     expect(ElMessageBox.confirm).toHaveBeenCalledWith(expect.stringContaining('1 个旧安装'), '迁移旧版安装', expect.any(Object))
+  })
+
+  it('shows and confirms repository-relative managed-store migration', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue({ action: 'confirm', value: '' } as never)
+    const previewSourceLayoutMigration = vi.fn().mockResolvedValue({
+      token: 'layout-token',
+      moves: [{ entityId: 'entity-1', fromRelativePath: 'xcSkill/skills/backend/demo', toRelativePath: 'xcSkill/backend/skills/demo', sourceRelativePath: 'backend/skills/demo' }],
+      unresolved: [{ entityId: 'entity-2', fromRelativePath: 'xcSkill/skills/common/shared', reason: 'ambiguous', candidateAssetIds: ['a', 'b'] }],
+      symlinkCount: 2, copyCount: 1, conflicts: [], expiresAt: '2026-09-01T10:00:00.000Z',
+    })
+    const executeSourceLayoutMigration = vi.fn().mockResolvedValue({
+      token: 'layout-next', moves: [], unresolved: [], symlinkCount: 0, copyCount: 0,
+      conflicts: [], expiresAt: '2026-09-01T10:05:00.000Z',
+    })
+    window.xcSkills = { repositories: { previewSourceLayoutMigration, executeSourceLayoutMigration } } as never
+    renderTestApp(RepositoryConfigForm, { props: { config: {
+      mode: 'local', repoPath: '/tmp/catalog', remoteUrl: '', defaultBranch: 'main', defaultGroups: [], assetStorePath: '/tmp/store',
+    } } })
+
+    expect(await screen.findByText('资源层级等待迁移')).toBeInTheDocument()
+    expect(screen.getByText(/1 项可迁移.*1 项来源待确认/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '按仓库层级整理' }))
+
+    await waitFor(() => expect(executeSourceLayoutMigration).toHaveBeenCalledWith('layout-token'))
+    expect(ElMessageBox.confirm).toHaveBeenCalledWith(expect.stringMatching(/1 个资源.*2 个软链接/), '整理资源存储层级', expect.any(Object))
   })
 
   it('keeps edited repository values after a save failure', async () => {

@@ -13,13 +13,16 @@ export type AssetActionInput = {
 
 const isRepositorySource = (sourceKind: SourceSelection['kind']): boolean => sourceKind === 'central' || sourceKind === 'third-party'
 const isFrozen = ({ asset, location }: AssetActionInput): boolean => asset.entryState === 'frozen' || location?.status.status === 'frozen'
+const isSymlink = ({ location }: AssetActionInput): boolean => location?.method === 'symlink'
 
 export const primaryAssetAction = (input: AssetActionInput): AssetAction | null => {
   if (isRepositorySource(input.sourceKind)) return { kind: 'install', label: '安装到…' }
   const status = input.location?.status.status
+  if (isSymlink(input) && isFrozen(input)) return { kind: 'uninstall', label: '卸载' }
   if (input.asset.type === 'skills' && isFrozen(input)) return { kind: 'thaw', label: '解冻' }
   if (status === 'locally_modified') return { kind: 'update-with-warning', label: '查看影响并更新' }
   if (status === 'update_available') return { kind: 'update', label: '更新' }
+  if (isSymlink(input)) return { kind: 'uninstall', label: '卸载' }
   if (input.asset.type === 'skills' && input.asset.entryState === 'active') return { kind: 'freeze', label: '冻结' }
   return null
 }
@@ -30,10 +33,10 @@ export const overflowAssetActions = (input: AssetActionInput): AssetAction[] => 
   const status = input.location.status.status
   return [
     ...(status === 'source_unavailable' ? [{ kind: 'relink-source', label: '重新关联来源' } as const] : []),
-    ...(input.asset.type === 'skills' && input.asset.entryState === 'active' && primary?.kind !== 'freeze'
+    ...(!isSymlink(input) && input.asset.type === 'skills' && input.asset.entryState === 'active' && primary?.kind !== 'freeze'
       ? [{ kind: 'freeze', label: '冻结' } as const]
       : []),
-    { kind: 'uninstall', label: '卸载' },
+    ...(primary?.kind !== 'uninstall' ? [{ kind: 'uninstall', label: '卸载' } as const] : []),
   ]
 }
 
@@ -47,12 +50,14 @@ export const batchActionEligibility = ({ action, sourceKind, asset, location }: 
   if (!location) return { eligible: false, reason: '缺少受管安装位置' }
   if (action === 'uninstall') return { eligible: true }
   if (action === 'freeze') {
+    if (isSymlink({ sourceKind, asset, location })) return { eligible: false, reason: '软链接资源不支持冻结' }
     if (isFrozen({ sourceKind, asset, location })) return { eligible: false, reason: '资源已经冻结' }
     if (location.status.status === 'broken_link' || location.status.status === 'conflict' || location.status.status === 'invalid') {
       return { eligible: false, reason: '资源状态不允许冻结' }
     }
     return { eligible: true }
   }
+  if (isSymlink({ sourceKind, asset, location })) return { eligible: false, reason: '软链接资源不支持解冻' }
   if (!isFrozen({ sourceKind, asset, location })) return { eligible: false, reason: '资源尚未冻结' }
   return { eligible: true }
 }

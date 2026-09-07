@@ -9,6 +9,7 @@ import { renderTestApp } from '../../src/renderer/src/app/render-test-app'
 
 const skill = {
   id: 'skill-one', type: 'skills', name: 'Skill One', group: '开发', path: '/central/skill-one', entryPath: '/central/skill-one/SKILL.md',
+  sourceRelativePath: '开发/skills/skill-one',
   entryState: 'active', description: 'first skill', version: '1.0.0',
 } as const
 
@@ -94,14 +95,15 @@ describe('Vue resource explorer', () => {
     await waitFor(() => expect(screen.getAllByText('call-api')).toHaveLength(2))
     expect(screen.getByRole('combobox', { name: 'Agent筛选' })).toBeInTheDocument()
 
-    const rows = screen.getAllByRole('listitem')
+    const rowButtons = screen.getAllByRole('button', { name: '查看 call-api' })
+    const rows = rowButtons.map((button) => button.closest('tr')!)
     expect(within(rows[0]!).getByText('Codex')).toBeInTheDocument()
     expect(within(rows[1]!).getByText('Claude Code')).toBeInTheDocument()
-    await user.click(rows[0]!)
+    await user.click(rowButtons[0]!)
     expect(rows[0]).toHaveClass('selected')
     await waitFor(() => expect(window.xcSkills.assets.detail).toHaveBeenCalled())
     expect(isProxy(vi.mocked(window.xcSkills.assets.detail).mock.calls.at(-1)?.[0].source)).toBe(false)
-    await user.click(rows[1]!)
+    await user.click(rowButtons[1]!)
     expect(rows[1]).toHaveClass('selected')
   })
 
@@ -120,6 +122,17 @@ describe('Vue resource explorer', () => {
     await user.click(screen.getByRole('button', { name: /^Demo$/ }))
     await waitFor(() => expect(screen.getAllByText('call-api')).toHaveLength(2))
     expect(screen.queryByRole('combobox', { name: '分组筛选' })).toBeNull()
+  })
+
+  it('places global and project sources below the third-party repository section', async () => {
+    renderTestApp(App)
+    await screen.findByText('Skill One')
+
+    const globalSource = screen.getByRole('button', { name: /^全局安装$/ })
+    const thirdPartyHeading = screen.getByRole('heading', { name: '第三方仓库' })
+    const projectSource = screen.getByRole('button', { name: /^Demo$/ })
+    expect(thirdPartyHeading.compareDocumentPosition(globalSource) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(globalSource.compareDocumentPosition(projectSource) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('pulls the latest central assets from the repository action', async () => {
@@ -159,6 +172,91 @@ describe('Vue resource explorer', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '拉取更新' })).toBeEnabled())
   })
 
+  it('shows a local rescan action for global and project sources only', async () => {
+    const user = userEvent.setup()
+    renderTestApp(App)
+    await screen.findByText('Skill One')
+
+    expect(screen.queryByRole('button', { name: '重新扫描' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: /^全局安装$/ }))
+    expect(await screen.findByRole('button', { name: '重新扫描' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /添加项目/ }))
+    await user.click(screen.getByRole('button', { name: /^Demo$/ }))
+    expect(await screen.findByRole('button', { name: '重新扫描' })).toBeInTheDocument()
+  })
+
+  it('opens repository resource installation from the current project page', async () => {
+    const user = userEvent.setup()
+    const api = makeApi()
+    window.xcSkills = api as never
+    renderTestApp(App)
+    await screen.findByText('Skill One')
+
+    await user.click(screen.getByRole('button', { name: /^Demo$/ }))
+    await waitFor(() => expect(screen.getAllByText('call-api')).toHaveLength(2))
+    await user.click(await screen.findByRole('button', { name: '安装新资源' }))
+
+    const installDialog = await screen.findByRole('dialog', { name: '安装新资源到项目' })
+    expect(within(installDialog).getByText('安装目标')).toBeInTheDocument()
+    expect(within(installDialog).getByText('Demo')).toBeInTheDocument()
+    const row = (await within(installDialog).findByText('Skill One')).closest('tr')!
+    await user.click(within(row).getByRole('checkbox', { name: /Select this row|选择此行/ }))
+    await user.click(within(installDialog).getByRole('button', { name: '安装到当前项目' }))
+
+    const batchDialog = await screen.findByRole('dialog', { name: '批量安装资源' })
+    expect(within(batchDialog).getByText('目标已锁定')).toBeInTheDocument()
+    expect(within(batchDialog).getByText('Demo')).toBeInTheDocument()
+    await waitFor(() => expect(api.operations.plan).toHaveBeenLastCalledWith(expect.objectContaining({
+      target: { scope: 'project', projectId: 'proj', agentId: 'codex' },
+      method: 'symlink',
+    })))
+  })
+
+  it('opens repository resource installation from the global page', async () => {
+    const user = userEvent.setup()
+    const api = makeApi()
+    window.xcSkills = api as never
+    renderTestApp(App)
+    await screen.findByText('Skill One')
+
+    await user.click(screen.getByRole('button', { name: /^全局安装$/ }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '安装新资源' })).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: '安装新资源' }))
+
+    const installDialog = await screen.findByRole('dialog', { name: '安装新资源到全局' })
+    expect(within(installDialog).getByText('安装目标')).toBeInTheDocument()
+    expect(within(installDialog).getByText('全局')).toBeInTheDocument()
+    const row = (await within(installDialog).findByText('Skill One')).closest('tr')!
+    await user.click(within(row).getByRole('checkbox', { name: /Select this row|选择此行/ }))
+    await user.click(within(installDialog).getByRole('button', { name: '安装到全局' }))
+
+    const batchDialog = await screen.findByRole('dialog', { name: '批量安装资源' })
+    expect(within(batchDialog).getByText('目标已锁定')).toBeInTheDocument()
+    expect(within(batchDialog).getByText('全局')).toBeInTheDocument()
+    await waitFor(() => expect(api.operations.plan).toHaveBeenLastCalledWith(expect.objectContaining({
+      target: { scope: 'global', agentId: 'codex' },
+      method: 'symlink',
+    })))
+  })
+
+  it('rescans only the selected local source without pulling a repository', async () => {
+    const user = userEvent.setup()
+    const api = makeApi()
+    window.xcSkills = api as never
+    renderTestApp(App)
+    await screen.findByText('Skill One')
+    await user.click(screen.getByRole('button', { name: /^全局安装$/ }))
+    await waitFor(() => expect(api.assets.scan).toHaveBeenCalledWith({ kind: 'global' }))
+    api.assets.scan.mockClear()
+    api.repositories.refresh.mockClear()
+
+    await user.click(screen.getByRole('button', { name: '重新扫描' }))
+
+    await waitFor(() => expect(api.assets.scan).toHaveBeenCalledWith({ kind: 'global' }))
+    expect(api.repositories.refresh).not.toHaveBeenCalled()
+  })
+
   it('clears the selected asset before changing sources', async () => {
     const user = userEvent.setup()
     renderTestApp(App)
@@ -175,28 +273,31 @@ describe('Vue resource explorer', () => {
   it('clears batch selection when the resource context changes', async () => {
     const user = userEvent.setup()
     renderTestApp(App)
-    await user.click(await screen.findByRole('checkbox', { name: '选择 Skill One' }))
-    expect(screen.getByText('已选择 1 项')).toBeInTheDocument()
+    const skillRow = (await screen.findByRole('button', { name: '查看 Skill One' })).closest('tr')!
+    await user.click(within(skillRow).getByRole('checkbox', { name: /Select this row|选择此行/ }))
+    await waitFor(() => expect(screen.getByText('已选择 1 项')).toBeInTheDocument())
 
     await user.type(screen.getByRole('textbox', { name: '搜索资源' }), 'Skill')
-    expect(screen.queryByText('已选择 1 项')).toBeNull()
+    expect(screen.getByText('已选择 0 项')).toBeInTheDocument()
     await user.clear(screen.getByRole('textbox', { name: '搜索资源' }))
-    await user.click(screen.getByRole('checkbox', { name: '选择 Skill One' }))
+    const restoredRow = (await screen.findByRole('button', { name: '查看 Skill One' })).closest('tr')!
+    await user.click(within(restoredRow).getByRole('checkbox', { name: /Select this row|选择此行/ }))
 
     await user.click(screen.getByRole('button', { name: /^Demo$/ }))
     await waitFor(() => expect(screen.getAllByText('call-api')).toHaveLength(2))
     await user.click(screen.getByRole('button', { name: /^中央仓库$/ }))
     await screen.findByText('Skill One')
 
-    expect(screen.queryByText('已选择 1 项')).toBeNull()
-    expect(screen.getByRole('checkbox', { name: '选择 Skill One' })).not.toBeChecked()
+    expect(screen.getByText('已选择 0 项')).toBeInTheDocument()
+    const currentRow = (await screen.findByRole('button', { name: '查看 Skill One' })).closest('tr')!
+    expect(within(currentRow).getByRole('checkbox', { name: /Select this row|选择此行/ })).not.toBeChecked()
   })
 
   it('opens asset details in a drawer and preserves the selection when closed', async () => {
     const user = userEvent.setup()
     vi.mocked(window.xcSkills.assets.scan).mockResolvedValueOnce([{ ...skill, group: '' }])
     renderTestApp(App)
-    const rowLabel = await screen.findByText('Skill One')
+    const rowLabel = await screen.findByRole('button', { name: '查看 Skill One' })
 
     await user.click(rowLabel)
     const drawer = await screen.findByRole('dialog', { name: 'Skill One' })
@@ -208,7 +309,7 @@ describe('Vue resource explorer', () => {
 
     await user.click(within(drawer).getByRole('button', { name: /close/i }))
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Skill One' })).toBeNull())
-    expect(rowLabel.closest('[role="listitem"]')).toHaveClass('selected')
+    expect(rowLabel.closest('tr')).toHaveClass('selected')
   })
 
   it('allows a local entity-store symlink even when the repository itself is cached', async () => {
@@ -250,13 +351,15 @@ describe('Vue resource explorer', () => {
     window.xcSkills = api as never
     renderTestApp(App)
 
-    await user.click(await screen.findByRole('checkbox', { name: '选择 Skill One' }))
-    await user.click(screen.getByRole('checkbox', { name: '选择 Skill Two' }))
+    const firstRow = (await screen.findByRole('button', { name: '查看 Skill One' })).closest('tr')!
+    const secondRow = (await screen.findByRole('button', { name: '查看 Skill Two' })).closest('tr')!
+    await user.click(within(firstRow).getByRole('checkbox', { name: /Select this row|选择此行/ }))
+    await user.click(within(secondRow).getByRole('checkbox', { name: /Select this row|选择此行/ }))
     await user.click(screen.getByRole('button', { name: '批量安装' }))
 
     expect(screen.queryByRole('dialog', { name: 'Skill One' })).toBeNull()
     const dialog = await screen.findByRole('dialog', { name: '批量安装资源' })
-    expect(within(dialog).getByText('2 个资源 · 2 个 Agent · 4 项操作')).toBeInTheDocument()
+    expect(within(dialog).getByText('2 个资源 · 1 个 Agent · 2 项操作')).toBeInTheDocument()
     expect(within(dialog).getByRole('combobox', { name: '目标范围' })).toBeInTheDocument()
   })
 

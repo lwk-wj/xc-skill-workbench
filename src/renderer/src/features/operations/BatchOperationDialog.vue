@@ -22,6 +22,15 @@ const warnings = computed(() => [...new Set(batch.planEntries.flatMap((entry) =>
 const planningErrors = computed(() => batch.planEntries.filter((entry) => entry.planningError))
 const activeEntry = computed(() => batch.executionEntries[batch.current] ?? null)
 const completedCount = computed(() => batch.executionEntries.filter((entry) => entry.status === 'completed').length)
+const migrationIssueSummary = computed(() => {
+  const migration = batch.sourceLayoutMigration
+  if (!migration) return ''
+  const issues = [
+    ...migration.unresolved.map((item) => `${item.fromRelativePath}：来源仓库中无法唯一找到资源`),
+    ...migration.conflicts.map((item) => `${item.path}：${item.reason}`),
+  ]
+  return issues.join('；')
+})
 const executionPercent = computed(() => batch.executionEntries.length
   ? Math.round((completedCount.value / batch.executionEntries.length) * 100)
   : 0)
@@ -32,6 +41,7 @@ const resultGroups: Array<{ status: BatchExecutionStatus[]; label: string }> = [
   { status: ['not_run'], label: '未执行' },
 ]
 const entriesFor = (statuses: BatchExecutionStatus[]) => batch.executionEntries.filter((entry) => statuses.includes(entry.status))
+const warningType = (warning: string): 'error' | 'warning' => warning.startsWith('未托管资源：') ? 'error' : 'warning'
 const replan = (): void => { void batch.refreshPlans() }
 
 const beforeClose = (done: () => void): void => {
@@ -56,6 +66,19 @@ const beforeClose = (done: () => void): void => {
     :before-close="beforeClose"
   >
     <ElAlert v-if="batch.error" type="error" :closable="false" :title="batch.error" />
+    <ElAlert
+      v-else-if="batch.migrationBlocked"
+      type="error"
+      :closable="false"
+      title="旧版资源无法自动恢复，当前批量安装已禁止执行。"
+      :description="migrationIssueSummary"
+    />
+    <ElAlert
+      v-else-if="batch.sourceLayoutMigration?.moves.length"
+      type="warning"
+      :closable="false"
+      :title="`安装前将自动恢复并升级 ${batch.sourceLayoutMigration.moves.length} 个旧版资源。`"
+    />
 
     <template v-if="batch.stage === 'configure'">
       <div class="batch-operation-summary">
@@ -63,17 +86,24 @@ const beforeClose = (done: () => void): void => {
         <span>{{ summary }}</span>
       </div>
       <div class="operation-targets">
-        <label>目标范围
-          <ElSelect v-model="batch.scope" aria-label="目标范围" @change="replan">
-            <ElOption label="全局" value="global" />
-            <ElOption label="项目" value="project" />
-          </ElSelect>
-        </label>
-        <label v-if="batch.scope === 'project'">项目
-          <ElSelect v-model="batch.projectId" aria-label="目标项目" @change="replan">
-            <ElOption v-for="project in batch.projects" :key="project.id" :label="project.name" :value="project.id" />
-          </ElSelect>
-        </label>
+        <div v-if="batch.targetLocked" class="operation-target-lock">
+          <span>目标已锁定</span>
+          <strong>{{ batch.targetLabel }}</strong>
+          <small>{{ batch.scope === 'global' ? '安装会直接写入全局 Agent 目录。' : '安装会直接写入当前项目，不会切换到全局或其他项目。' }}</small>
+        </div>
+        <template v-else>
+          <label>目标范围
+            <ElSelect v-model="batch.scope" aria-label="目标范围" @change="replan">
+              <ElOption label="全局" value="global" />
+              <ElOption label="项目" value="project" />
+            </ElSelect>
+          </label>
+          <label v-if="batch.scope === 'project'">项目
+            <ElSelect v-model="batch.projectId" aria-label="目标项目" @change="replan">
+              <ElOption v-for="project in batch.projects" :key="project.id" :label="project.name" :value="project.id" />
+            </ElSelect>
+          </label>
+        </template>
         <fieldset>
           <legend>启用的 Agent</legend>
           <ElCheckboxGroup v-model="batch.selectedAgents" aria-label="启用的 Agent" @change="replan">
@@ -84,10 +114,10 @@ const beforeClose = (done: () => void): void => {
       <fieldset>
         <legend>安装方式</legend>
         <ElRadioGroup v-model="batch.method" aria-label="安装方式" @change="replan">
-          <ElRadio value="copy">复制</ElRadio>
           <ElRadio value="symlink">软链接</ElRadio>
+          <ElRadio value="copy">复制</ElRadio>
         </ElRadioGroup>
-        <p class="operation-method-note">所有资源将使用同一种安装方式；软链接统一指向资源存储目录。</p>
+        <p class="operation-method-note">默认使用软链接，统一指向资源存储目录；复制会生成独立快照。</p>
       </fieldset>
       <div class="batch-operation-footer">
         <ElButton type="primary" :loading="batch.planning" :disabled="!batch.planEntries.length" @click="batch.confirmPreview">查看操作预览</ElButton>
@@ -110,26 +140,16 @@ const beforeClose = (done: () => void): void => {
         <h3 id="batch-paths-title">受影响路径</h3>
         <ul><li v-for="path in affectedPaths" :key="path"><code>{{ path }}</code></li></ul>
       </section>
-      <ElAlert v-for="warning in warnings" :key="warning" type="warning" :closable="false" :title="warning" />
-      <div class="batch-operation-footer">
-        <ElButton v-if="batch.kind === 'install'" @click="batch.stage = 'configure'">返回配置</ElButton>
-        <ElButton type="primary" :disabled="!batch.canConfirm" @click="batch.confirmExecution">确认并继续</ElButton>
-      </div>
-    </template>
-
-    <template v-else-if="batch.stage === 'confirm'">
-      <div class="batch-operation-summary">
-        <strong>最后确认</strong>
-        <span>{{ summary }}</span>
-      </div>
+      <ElAlert v-for="warning in warnings" :key="warning" :type="warningType(warning)" :closable="false" :title="warning" />
       <ElAlert
+        v-if="batch.canConfirm"
         :type="batch.kind === 'uninstall' ? 'error' : 'warning'"
         :closable="false"
         :title="batch.kind === 'uninstall' ? '卸载会删除所有选中的安装位置，此操作不可逆。' : '操作将按列表顺序执行，首次失败后会停止。'"
       />
       <div class="batch-operation-footer">
-        <ElButton @click="batch.stage = 'preview'">返回预览</ElButton>
-        <ElButton :type="batch.kind === 'uninstall' ? 'danger' : 'primary'" @click="batch.executeAll">确认执行</ElButton>
+        <ElButton v-if="batch.kind === 'install'" @click="batch.stage = 'configure'">返回配置</ElButton>
+        <ElButton :type="batch.kind === 'uninstall' ? 'danger' : 'primary'" :disabled="!batch.canConfirm" @click="batch.executeFromPreview">确认执行</ElButton>
       </div>
     </template>
 

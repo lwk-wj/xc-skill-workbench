@@ -10,6 +10,7 @@ import type {
   OperationRequest,
   OperationResult,
   ProjectRecord,
+  SourceLayoutMigrationPreview,
   SourceSelection,
 } from '../../../shared/ipc.js'
 import { plainSource } from '../app/types'
@@ -38,10 +39,20 @@ export type OpenBatchOperation = {
   source: SourceSelection
   projects: ProjectRecord[]
   agents: AgentDefinition[]
+  defaultScope?: 'global' | 'project'
+  defaultProjectId?: string
+  lockTarget?: boolean
   onRescan?: (paths: string[]) => void
 }
 
 const errorMessage = (cause: unknown, fallback: string): string => cause instanceof Error ? cause.message : fallback
+const defaultAgentId = 'codex'
+
+const sortAgentsWithDefaultFirst = (left: AgentDefinition, right: AgentDefinition): number => {
+  if (left.id === defaultAgentId && right.id !== defaultAgentId) return -1
+  if (right.id === defaultAgentId && left.id !== defaultAgentId) return 1
+  return left.name.localeCompare(right.name, 'zh-Hans-CN') || left.id.localeCompare(right.id)
+}
 
 export const useBatchOperationStore = defineStore('batch-operation', () => {
   const stage = ref<BatchOperationStage>('closed')
@@ -53,7 +64,8 @@ export const useBatchOperationStore = defineStore('batch-operation', () => {
   const scope = ref<'global' | 'project'>('global')
   const projectId = ref<string | undefined>()
   const selectedAgents = ref<string[]>([])
-  const method = ref<InstallMethod>('copy')
+  const method = ref<InstallMethod>('symlink')
+  const targetLocked = ref(false)
   const planEntries = ref<BatchPlanEntry[]>([])
   const executionEntries = ref<BatchExecutionEntry[]>([])
   const planning = ref(false)
@@ -61,17 +73,29 @@ export const useBatchOperationStore = defineStore('batch-operation', () => {
   const current = ref(-1)
   const progress = ref<OperationProgress | null>(null)
   const cancelling = ref(false)
+  const sourceLayoutMigration = ref<SourceLayoutMigrationPreview | null>(null)
   let planToken = 0
   let disposeProgress: (() => void) | null = null
   let onRescan: ((paths: string[]) => void) | undefined
 
-  const enabledAgents = computed(() => agents.value.filter((agent) => agent.enabled))
+  const enabledAgents = computed(() => agents.value.filter((agent) => agent.enabled).sort(sortAgentsWithDefaultFirst))
+  const migrationBlocked = computed(() => Boolean(
+    sourceLayoutMigration.value?.unresolved.length
+    || sourceLayoutMigration.value?.conflicts.length,
+  ))
   const canConfirm = computed(() => planEntries.value.length > 0
-    && planEntries.value.every((entry) => entry.plan !== null && entry.planningError === null))
+    && planEntries.value.every((entry) => entry.plan !== null && entry.planningError === null)
+    && !migrationBlocked.value
+    && error.value === null)
   const operationCount = computed(() => planEntries.value.length)
   const title = computed(() => ({
     install: '批量安装资源', freeze: '批量冻结资源', thaw: '批量解冻资源', uninstall: '批量卸载资源',
   })[kind.value])
+  const targetLabel = computed(() => (
+    scope.value === 'global'
+      ? '全局'
+      : projects.value.find((project) => project.id === projectId.value)?.name ?? projectId.value ?? '项目'
+  ))
 
   const stopProgress = (): void => {
     disposeProgress?.()
@@ -79,6 +103,13 @@ export const useBatchOperationStore = defineStore('batch-operation', () => {
   }
 
   const agentName = (agentId: string): string => agents.value.find((agent) => agent.id === agentId)?.name ?? agentId
+
+  const defaultSelectedAgents = (): string[] => {
+    const preferred = enabledAgents.value.find((agent) => agent.id === defaultAgentId)
+    const fallback = enabledAgents.value[0]
+    const selected = preferred ?? fallback
+    return selected ? [selected.id] : []
+  }
 
   const targetFor = (agentId: string, location: AssetStatusLocation | null): OperationRequest['target'] => {
     if (location) return location.projectId
@@ -158,6 +189,18 @@ export const useBatchOperationStore = defineStore('batch-operation', () => {
     planning.value = false
   }
 
+  const refreshSourceLayoutMigration = async (): Promise<void> => {
+    sourceLayoutMigration.value = null
+    if (kind.value !== 'install') return
+    const preview = window.xcSkills.repositories?.previewSourceLayoutMigration
+    if (!preview) return
+    try {
+      sourceLayoutMigration.value = await preview()
+    } catch (cause) {
+      error.value = errorMessage(cause, '无法检查资源存储状态')
+    }
+  }
+
   const open = async (input: OpenBatchOperation): Promise<void> => {
     stopProgress()
     planToken += 1
@@ -166,10 +209,11 @@ export const useBatchOperationStore = defineStore('batch-operation', () => {
     source.value = plainSource(input.source)
     projects.value = input.projects
     agents.value = input.agents
-    scope.value = input.kind === 'install' && input.projects.length ? 'project' : 'global'
-    projectId.value = input.projects[0]?.id
-    selectedAgents.value = input.agents.filter((agent) => agent.enabled).map((agent) => agent.id)
-    method.value = 'copy'
+    scope.value = input.defaultScope ?? 'global'
+    projectId.value = input.defaultProjectId ?? input.projects[0]?.id
+    selectedAgents.value = defaultSelectedAgents()
+    method.value = 'symlink'
+    targetLocked.value = input.lockTarget ?? false
     planEntries.value = []
     executionEntries.value = []
     planning.value = false
@@ -177,6 +221,7 @@ export const useBatchOperationStore = defineStore('batch-operation', () => {
     current.value = -1
     progress.value = null
     cancelling.value = false
+    sourceLayoutMigration.value = null
     onRescan = input.onRescan
     stage.value = input.kind === 'install' ? 'configure' : 'preview'
     disposeProgress = window.xcSkills.operations.onProgress((event) => {
@@ -184,6 +229,7 @@ export const useBatchOperationStore = defineStore('batch-operation', () => {
       if (active?.plan?.id === event.planId) progress.value = event
     })
     await refreshPlans()
+    await refreshSourceLayoutMigration()
   }
 
   const confirmPreview = (): void => {
@@ -194,6 +240,12 @@ export const useBatchOperationStore = defineStore('batch-operation', () => {
     if (stage.value === 'preview' && canConfirm.value) stage.value = 'confirm'
   }
 
+  const executeFromPreview = async (): Promise<void> => {
+    if (stage.value !== 'preview' || !canConfirm.value) return
+    stage.value = 'confirm'
+    await executeAll()
+  }
+
   const executeAll = async (): Promise<void> => {
     if (stage.value !== 'confirm' || !canConfirm.value) return
     executionEntries.value = planEntries.value.map((entry) => ({ ...entry, status: 'pending', result: null, error: null }))
@@ -202,6 +254,17 @@ export const useBatchOperationStore = defineStore('batch-operation', () => {
     current.value = -1
     progress.value = null
     const affectedPaths: string[] = []
+    const migration = sourceLayoutMigration.value
+    if (migration?.moves.length) {
+      try {
+        sourceLayoutMigration.value = await window.xcSkills.repositories.executeSourceLayoutMigration(migration.token)
+      } catch (cause) {
+        error.value = `资源存储升级失败：${errorMessage(cause, '无法恢复旧版资源')}`
+        for (const entry of executionEntries.value) entry.status = 'not_run'
+        stage.value = 'done'
+        return
+      }
+    }
     for (let index = 0; index < executionEntries.value.length; index += 1) {
       current.value = index
       const entry = executionEntries.value[index]!
@@ -249,17 +312,19 @@ export const useBatchOperationStore = defineStore('batch-operation', () => {
     stopProgress()
     stage.value = 'closed'
     items.value = []
+    targetLocked.value = false
     planEntries.value = []
     executionEntries.value = []
+    sourceLayoutMigration.value = null
     onRescan = undefined
   }
 
   if (getCurrentScope()) onScopeDispose(stopProgress)
 
   return {
-    stage, kind, items, source, projects, agents, scope, projectId, selectedAgents, method,
-    planEntries, executionEntries, planning, error, current, progress, cancelling,
-    enabledAgents, canConfirm, operationCount, title,
-    open, refreshPlans, confirmPreview, confirmExecution, executeAll, cancelActive, close,
+    stage, kind, items, source, projects, agents, scope, projectId, selectedAgents, method, targetLocked,
+    planEntries, executionEntries, planning, error, current, progress, cancelling, sourceLayoutMigration,
+    enabledAgents, migrationBlocked, canConfirm, operationCount, title, targetLabel,
+    open, refreshPlans, confirmPreview, confirmExecution, executeFromPreview, executeAll, cancelActive, close,
   }
 })

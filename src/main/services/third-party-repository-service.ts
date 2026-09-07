@@ -60,7 +60,7 @@ export type ResolvedThirdPartyRepository = {
 type LogLike = { write(level: string, message: string, context?: unknown): Promise<void> }
 type ServiceOptions = {
   appStore: AppStore
-  cacheRoot: string
+  cacheRoot: string | (() => string | Promise<string>)
   core?: ThirdPartyCoreAdapter
   log?: LogLike
   idFactory?: () => string
@@ -104,7 +104,7 @@ const inferName = (source: string): string => {
 
 export class ThirdPartyRepositoryService {
   private readonly appStore: AppStore
-  private readonly managedRoot: string
+  private readonly cacheRootProvider: ServiceOptions['cacheRoot']
   private readonly core: ThirdPartyCoreAdapter
   private readonly log?: LogLike
   private readonly idFactory: () => string
@@ -114,14 +114,21 @@ export class ThirdPartyRepositoryService {
 
   constructor(options: ServiceOptions) {
     this.appStore = options.appStore
-    this.managedRoot = resolve(options.cacheRoot, 'third-party')
+    this.cacheRootProvider = options.cacheRoot
     this.core = options.core ?? defaultCore
     this.log = options.log
     this.idFactory = options.idFactory ?? randomUUID
     this.now = options.now ?? (() => new Date())
   }
 
-  private cacheRoot(id: string): string { return resolve(this.managedRoot, id) }
+  private async managedRoot(): Promise<string> {
+    const root = typeof this.cacheRootProvider === 'function'
+      ? await this.cacheRootProvider()
+      : this.cacheRootProvider
+    return resolve(root, 'third-party')
+  }
+
+  private async cacheRoot(id: string): Promise<string> { return resolve(await this.managedRoot(), id) }
 
   private async assertUnique(url: string, branch: string, exceptId?: string): Promise<void> {
     if ((await this.appStore.listThirdPartyRepositories()).some((repository) =>
@@ -150,7 +157,7 @@ export class ThirdPartyRepositoryService {
 
   private async prepare(repository: ThirdPartyRepository): Promise<ResolvedThirdPartyRepository> {
     const config = { mode: 'remote' as const, remoteUrl: repository.url, defaultBranch: repository.branch }
-    const source = await this.core.resolveRepositorySource(config, repository.branch, this.cacheRoot(repository.id))
+    const source = await this.core.resolveRepositorySource(config, repository.branch, await this.cacheRoot(repository.id))
     const hasConfiguredRoots = repository.skillRoots.length > 0
     const layout = hasConfiguredRoots
       ? 'catalog' as const
@@ -189,8 +196,9 @@ export class ThirdPartyRepositoryService {
   }
 
   private async removeOwnedCache(id: string): Promise<void> {
-    const root = this.cacheRoot(id)
-    const canonicalManagedRoot = await realpath(this.managedRoot).catch(() => this.managedRoot)
+    const root = await this.cacheRoot(id)
+    const managedRoot = await this.managedRoot()
+    const canonicalManagedRoot = await realpath(managedRoot).catch(() => managedRoot)
     const canonicalRoot = await realpath(root).catch(() => root)
     if (canonicalRoot === canonicalManagedRoot || !isWithin(canonicalManagedRoot, canonicalRoot)) {
       throw new Error('repository cache is outside the managed cache root')
@@ -211,6 +219,10 @@ export class ThirdPartyRepositoryService {
         })
       }
     }))
+  }
+
+  invalidateSnapshots(): void {
+    this.snapshots.clear()
   }
 
   async add(input: ThirdPartyRepositoryInput): Promise<ThirdPartyRepositoryView> {

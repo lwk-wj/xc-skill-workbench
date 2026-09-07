@@ -9,6 +9,7 @@ import type { AssetDetail as AssetDetailRecord, AssetRecord } from '../../src/sh
 
 const asset: AssetRecord = {
   id: 'codex:skill-one', type: 'skills', name: 'Skill One', group: '开发', path: '/tmp/skill-one', entryPath: '/tmp/skill-one/SKILL.md',
+  sourceRelativePath: '开发/skills/skill-one',
   entryState: 'active', description: 'first skill', version: '1.0.0', agentId: 'codex',
 }
 

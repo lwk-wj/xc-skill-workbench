@@ -10,6 +10,7 @@ const makeAsset = (root: string, name = 'demo') => ({
   type: 'skills' as const,
   name,
   group: '',
+  sourceRelativePath: name,
   path: join(root, name),
   entryPath: join(root, name, 'SKILL.md'),
   entryState: 'active' as const,
@@ -53,6 +54,38 @@ const fixture = async (overrides: Partial<ThirdPartyCoreAdapter> = {}) => {
 }
 
 describe('ThirdPartyRepositoryService', () => {
+  it('resolves a dynamic repositories root for each remote operation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-third-party-dynamic-root-'))
+    const store = new AppStore(join(root, 'state.json'))
+    let resourceRoot = join(root, 'first', 'repositories')
+    const received: string[] = []
+    const core: ThirdPartyCoreAdapter = {
+      normalizeRepositorySource: async (url) => url,
+      resolveDefaultBranch: async () => 'main',
+      resolveRepositorySource: async (_config, branch, repositoryCacheRoot) => {
+        received.push(repositoryCacheRoot)
+        const checkout = join(repositoryCacheRoot, 'checkout')
+        await mkdir(join(checkout, 'demo'), { recursive: true })
+        await writeFile(join(checkout, 'demo', 'SKILL.md'), '# Demo\n')
+        return { root: checkout, branch, commit: 'a'.repeat(40), kind: 'branch-cache', allowSymlink: false, stale: false, cachedAt: null }
+      },
+      detectRepositoryLayout: async () => 'catalog',
+      scanAssets: async ({ root: sourceRoot }) => [makeAsset(sourceRoot)],
+    }
+    const service = new ThirdPartyRepositoryService({
+      appStore: store, cacheRoot: () => resourceRoot, core, idFactory: () => 'repo-1',
+    })
+    const repository = await service.add({ url: 'https://example.com/demo.git' })
+    resourceRoot = join(root, 'second', 'repositories')
+    await service.refresh(repository.id)
+
+    expect(received).toEqual([
+      join(root, 'first', 'repositories', 'third-party', 'repo-1'),
+      join(root, 'second', 'repositories', 'third-party', 'repo-1'),
+    ])
+    await rm(root, { recursive: true, force: true })
+  })
+
   it('adds a validated repository using its remote default branch', async () => {
     const { root, store, service } = await fixture()
 

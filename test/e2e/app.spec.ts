@@ -16,10 +16,12 @@ test.describe('desktop smoke workflows', () => {
 
   test('shows platform tags for global and project installations', async ({ e2e }) => {
     await e2e.page.getByRole('button', { name: '全局安装', exact: true }).click()
-    await expect(e2e.page.getByRole('listitem').filter({ hasText: 'call-api' }).getByText('Codex', { exact: true })).toBeVisible()
+    const globalRow = e2e.page.getByRole('row').filter({ has: e2e.page.getByRole('button', { name: '查看 call-api' }) })
+    await expect(globalRow.getByText('Codex', { exact: true })).toBeVisible()
     await e2e.page.getByRole('button', { name: /添加项目/ }).click()
     await e2e.page.getByRole('button', { name: 'project', exact: true }).click()
-    await expect(e2e.page.getByRole('listitem').filter({ hasText: 'call-api' }).getByText('Claude Code', { exact: true })).toBeVisible()
+    const projectRow = e2e.page.getByRole('row').filter({ has: e2e.page.getByRole('button', { name: '查看 call-api' }) })
+    await expect(projectRow.getByText('Claude Code', { exact: true })).toBeVisible()
   })
 
   test('switching branches leaves the configured checkout untouched', async ({ e2e }) => {
@@ -34,19 +36,19 @@ test.describe('desktop smoke workflows', () => {
   })
 
   test('refreshes central assets immediately after saving repository settings', async ({ e2e }) => {
-    await expect(e2e.page.getByRole('listitem').filter({ hasText: 'demo' }).first()).toBeVisible()
+    await expect(e2e.page.getByRole('button', { name: '查看 demo' })).toBeVisible()
     await e2e.page.getByRole('button', { name: '设置' }).click()
     const settings = e2e.page.getByRole('dialog', { name: '设置' })
     await expect(settings).toBeVisible()
-    const path = settings.getByLabel('本地仓库路径')
-    await expect(path).toHaveValue(e2e.repo)
-    await path.fill(e2e.alternateRepo)
+    const url = settings.getByLabel('远程仓库 URL')
+    await expect(url).toHaveValue(e2e.repo)
+    await url.fill(e2e.alternateRepo)
     await settings.getByRole('button', { name: '保存并刷新' }).click()
     await expect(settings.getByText('配置已保存，中央仓库已刷新')).toBeVisible()
     await settings.getByRole('button', { name: '完成' }).click()
 
-    await expect(e2e.page.getByRole('listitem').filter({ hasText: 'replacement' }).first()).toBeVisible()
-    await expect(e2e.page.getByRole('listitem').filter({ hasText: 'demo' })).toHaveCount(0)
+    await expect(e2e.page.getByRole('button', { name: '查看 replacement' })).toBeVisible()
+    await expect(e2e.page.getByRole('button', { name: '查看 demo' })).toHaveCount(0)
   })
 
   test('scrolls only the settings content while the dialog chrome stays fixed', async ({ e2e }) => {
@@ -128,6 +130,33 @@ test.describe('desktop smoke workflows', () => {
     await expect(wrapper).toHaveClass(/el-input__wrapper/)
   })
 
+  test('keeps removable default-group tags and close controls compact', async ({ e2e }) => {
+    await e2e.page.getByRole('button', { name: '设置' }).click()
+    const dialog = e2e.page.getByRole('dialog', { name: '设置' })
+    const groups = dialog.getByRole('combobox', { name: '默认分组' })
+
+    for (const group of ['miniapp', 'backend', 'h5', 'common']) {
+      await groups.fill(group)
+      await groups.press('Enter')
+    }
+
+    const close = dialog.locator('.repository-config-form .el-select__selection .el-tag__close').first()
+    await expect(close).toBeVisible()
+    await close.hover()
+    const dimensions = await close.evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      const svg = element.querySelector('svg')?.getBoundingClientRect()
+      return {
+        width: Math.round(box.width),
+        height: Math.round(box.height),
+        svgWidth: Math.round(svg?.width ?? 0),
+        svgHeight: Math.round(svg?.height ?? 0),
+      }
+    })
+
+    expect(dimensions).toEqual({ width: 14, height: 14, svgWidth: 12, svgHeight: 12 })
+  })
+
   test('opens readable asset details in a wide drawer', async ({ e2e }) => {
     await e2e.page.getByRole('button', { name: /添加项目/ }).click()
     await e2e.page.getByRole('button', { name: '中央仓库' }).click()
@@ -137,8 +166,8 @@ test.describe('desktop smoke workflows', () => {
     ))
     expect(columnCount).toBe(2)
 
-    const row = e2e.page.getByRole('listitem').filter({ hasText: 'demo' }).first()
-    await row.click()
+    const row = e2e.page.getByRole('row').filter({ has: e2e.page.getByRole('button', { name: '查看 demo' }) })
+    await row.getByRole('button', { name: '查看 demo' }).click()
     const drawer = e2e.page.getByRole('dialog', { name: 'demo' })
     await expect(drawer).toBeVisible()
     await expect(drawer.getByRole('tab', { name: '预览' })).toBeVisible()
@@ -176,7 +205,7 @@ test.describe('desktop smoke workflows', () => {
     await expect(drawer).toBeHidden()
     await expect(row).toHaveClass(/selected/)
 
-    await row.click()
+    await row.getByRole('button', { name: '查看 demo' }).click()
     await expect(drawer).toBeVisible()
   })
 

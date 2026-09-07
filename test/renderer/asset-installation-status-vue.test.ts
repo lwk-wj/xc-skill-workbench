@@ -9,6 +9,7 @@ import type { AgentDefinition, AssetRecord, ProjectRecord } from '../../src/shar
 
 const asset: AssetRecord = {
   id: 'skill-one', type: 'skills', name: 'Skill One', group: 'backend',
+  sourceRelativePath: 'backend/skills/skill-one',
   path: '/central/skill-one', entryPath: '/central/skill-one/SKILL.md',
   entryState: 'active', description: 'fixture', version: '1.0.0',
 }

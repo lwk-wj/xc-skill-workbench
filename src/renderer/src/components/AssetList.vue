@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { ElButton, ElCheckbox, ElDropdown, ElDropdownItem, ElDropdownMenu, ElTag } from 'element-plus'
+import { computed, nextTick, ref, watch } from 'vue'
+import { ElButton, ElDropdown, ElDropdownItem, ElDropdownMenu, ElTable, ElTableColumn, ElTag } from 'element-plus'
+import type { TableInstance } from 'element-plus'
 import type { AssetRecord, SourceSelection } from '../../../shared/ipc.js'
 import { assetStatusLabel } from '../lib/asset-status-label'
 import {
@@ -47,8 +48,8 @@ const filteredAssets = computed(() => props.assets
 const selectedIdSet = computed(() => new Set(props.selectedIds))
 const selectedAssets = computed(() => props.assets.filter((asset) => selectedIdSet.value.has(asset.id)))
 const filteredIds = computed(() => filteredAssets.value.map((asset) => asset.id))
-const allFilteredSelected = computed(() => filteredIds.value.length > 0 && filteredIds.value.every((id) => selectedIdSet.value.has(id)))
-const someFilteredSelected = computed(() => !allFilteredSelected.value && filteredIds.value.some((id) => selectedIdSet.value.has(id)))
+const table = ref<TableInstance>()
+let syncingTableSelection = false
 
 const batchActions = computed<{ kind: BatchActionKind; label: string }[]>(() => (
   props.sourceKind === 'central' || props.sourceKind === 'third-party'
@@ -60,20 +61,28 @@ const batchActions = computed<{ kind: BatchActionKind; label: string }[]>(() => 
       ]
 ))
 
-const updateAssetSelection = (assetId: string, selected: boolean): void => {
-  const next = new Set(props.selectedIds)
-  if (selected) next.add(assetId)
-  else next.delete(assetId)
-  emit('update:selectedIds', [...next])
+const syncTableSelection = async (): Promise<void> => {
+  await nextTick()
+  if (!table.value) return
+  syncingTableSelection = true
+  table.value.clearSelection()
+  for (const asset of filteredAssets.value) {
+    if (selectedIdSet.value.has(asset.id)) table.value.toggleRowSelection(asset, true)
+  }
+  syncingTableSelection = false
 }
 
-const updateFilteredSelection = (selected: boolean): void => {
-  const next = new Set(props.selectedIds)
-  for (const id of filteredIds.value) {
-    if (selected) next.add(id)
-    else next.delete(id)
-  }
-  emit('update:selectedIds', [...next])
+watch([filteredIds, () => props.selectedIds], () => { void syncTableSelection() }, {
+  deep: true,
+  immediate: true,
+  flush: 'post',
+})
+
+const updateTableSelection = (rows: AssetRecord[]): void => {
+  if (syncingTableSelection) return
+  const filteredIdSet = new Set(filteredIds.value)
+  const next = props.selectedIds.filter((id) => !filteredIdSet.has(id))
+  emit('update:selectedIds', [...next, ...rows.map((asset) => asset.id)])
 }
 
 const batchIssues = (action: BatchActionKind): string[] => selectedAssets.value.flatMap((asset) => {
@@ -99,13 +108,51 @@ const entryStatusType = (status: AssetRecord['entryState']): 'success' | 'warnin
   active: 'success' as const, frozen: 'info' as const, conflict: 'warning' as const, invalid: 'danger' as const,
 })[status]
 
+const isRepositorySource = (): boolean => props.sourceKind === 'central' || props.sourceKind === 'third-party'
+const locationsFor = (asset: AssetRecord): StatusLocation[] => props.managementStatuses[asset.id] ?? []
 const locationFor = (asset: AssetRecord): StatusLocation | null => props.managementStatuses[asset.id]?.[0] ?? null
+const installationMethod = (asset: AssetRecord): 'copy' | 'symlink' | 'unmanaged' | null => {
+  if (props.sourceKind === 'central' || props.sourceKind === 'third-party') return null
+  return locationFor(asset)?.method ?? 'unmanaged'
+}
+const installationMethodLabel = (asset: AssetRecord): string => ({
+  copy: '复制',
+  symlink: '软链接',
+  unmanaged: '未受管',
+})[installationMethod(asset) ?? 'unmanaged']
+
+const repositoryStatusFor = (asset: AssetRecord): StatusLocation['status'] | null => {
+  const locations = locationsFor(asset)
+  if (!isRepositorySource() || !locations.length) return null
+  const priority: Array<StatusLocation['status']['status']> = [
+    'broken_link',
+    'conflict',
+    'invalid',
+    'locally_modified',
+    'update_available',
+    'frozen',
+    'current',
+    'source_unavailable',
+    'unknown',
+    'not_installed',
+  ]
+  return priority
+    .map((status) => locations.find((location) => location.status.status === status)?.status)
+    .find(Boolean) ?? null
+}
+
+const statusForDisplay = (asset: AssetRecord): StatusLocation['status'] | null => (
+  repositoryStatusFor(asset) ?? locationFor(asset)?.status ?? null
+)
+
 const displayStatus = (asset: AssetRecord): string => {
-  const status = locationFor(asset)?.status
-  return status ? assetStatusLabel(status) : entryStatusLabel(asset.entryState)
+  const status = statusForDisplay(asset)
+  if (!status) return entryStatusLabel(asset.entryState)
+  if (isRepositorySource() && status.status === 'current') return '已安装'
+  return assetStatusLabel(status)
 }
 const displayStatusType = (asset: AssetRecord): 'success' | 'warning' | 'danger' | 'info' => {
-  const status = locationFor(asset)?.status.status
+  const status = statusForDisplay(asset)?.status
   if (status === 'update_available' || status === 'locally_modified' || status === 'frozen') return 'warning'
   if (status === 'broken_link' || status === 'conflict' || status === 'invalid') return 'danger'
   if (status === 'unknown' || status === 'source_unavailable') return 'info'
@@ -129,6 +176,11 @@ const runAction = (action: AssetAction, asset: AssetRecord): void => {
   if (props.sourceKind === 'central' || props.sourceKind === 'third-party') emit('action', action.kind, asset)
   else if (location) emit('action', action.kind, asset, location)
 }
+
+const tableRowClassName = ({ row }: { row: AssetRecord }): string => (
+  row.id === props.selectedId ? 'asset-table-row selected' : 'asset-table-row'
+)
+const asAsset = (row: unknown): AssetRecord => row as AssetRecord
 </script>
 
 <template>
@@ -147,81 +199,97 @@ const runAction = (action: AssetAction, asset: AssetRecord): void => {
   </section>
   <div v-else class="asset-results">
     <div class="asset-selection-toolbar" role="toolbar" aria-label="资源批量操作">
-      <ElCheckbox
-        :model-value="allFilteredSelected"
-        :indeterminate="someFilteredSelected"
-        aria-label="全选当前筛选结果"
-        @change="(checked) => updateFilteredSelection(Boolean(checked))"
-      >全选</ElCheckbox>
-      <span v-if="selectedAssets.length" class="asset-selection-count">已选择 {{ selectedAssets.length }} 项</span>
-      <div v-if="selectedAssets.length" class="asset-batch-actions">
+      <span class="asset-selection-count">已选择 {{ selectedAssets.length }} 项</span>
+      <div class="asset-batch-actions">
         <div v-for="batchAction in batchActions" :key="batchAction.kind" class="asset-batch-action">
           <ElButton
             :type="batchAction.kind === 'uninstall' ? 'danger' : 'primary'"
             :plain="batchAction.kind !== 'uninstall'"
             size="small"
-            :disabled="batchIssues(batchAction.kind).length > 0"
+            :disabled="!selectedAssets.length || batchIssues(batchAction.kind).length > 0"
             @click="runBatchAction(batchAction.kind)"
           >{{ batchAction.label }}</ElButton>
-          <span
-            v-for="issue in batchIssues(batchAction.kind)"
-            :key="issue"
-            class="asset-batch-issue"
-          >{{ issue }}</span>
         </div>
-        <ElButton text size="small" @click="emit('update:selectedIds', [])">清空选择</ElButton>
+        <ElButton text size="small" :disabled="!selectedAssets.length" @click="emit('update:selectedIds', [])">清空选择</ElButton>
       </div>
     </div>
 
-    <div class="asset-list" role="list" aria-label="资源列表">
-    <article
-      v-for="asset in filteredAssets"
-      :key="asset.id"
-      role="listitem"
-      class="asset-row"
-      :class="{ selected: asset.id === selectedId }"
-      @click="emit('select', asset.id)"
+    <ElTable
+      ref="table"
+      class="asset-table"
+      :data="filteredAssets"
+      row-key="id"
+      height="100%"
+      :row-class-name="tableRowClassName"
+      @selection-change="updateTableSelection"
+      @select-all="updateTableSelection"
     >
-      <div class="asset-row-selector" @click.stop>
-        <ElCheckbox
-          :model-value="selectedIdSet.has(asset.id)"
-          :aria-label="`选择 ${asset.name}`"
-          @change="(checked) => updateAssetSelection(asset.id, Boolean(checked))"
-        />
-      </div>
-      <button class="asset-row-main" :aria-label="`查看 ${asset.name}`" @click.stop="emit('select', asset.id)">
-        <span class="asset-copy">
-          <span class="asset-title-line">
-            <ElTag v-if="sourceKind !== 'central' && asset.agentId" class="platform-tag" effect="plain" size="small">
-              {{ agentName(asset.agentId) }}
-            </ElTag>
-            <strong>{{ asset.name }}</strong>
-          </span>
-          <small>{{ asset.group }} · {{ asset.description }}</small>
-        </span>
-      </button>
-
-      <div class="asset-row-management" @click.stop>
-        <ElTag class="status-tag" :type="displayStatusType(asset)" effect="plain" size="small">{{ displayStatus(asset) }}</ElTag>
-        <ElButton
-          v-if="primaryAction(asset)"
-          class="asset-primary-action"
-          type="primary"
-          plain
-          size="small"
-          :aria-label="`${primaryAction(asset)!.label} ${asset.name}`"
-          @click="runAction(primaryAction(asset)!, asset)"
-        >{{ primaryAction(asset)!.label }}</ElButton>
-        <ElDropdown v-if="overflowActions(asset).length" trigger="click" @command="(kind: string) => runAction(overflowActions(asset).find((item) => item.kind === kind)!, asset)">
-          <ElButton class="asset-overflow-action" text size="small" :aria-label="`更多操作 ${asset.name}`">···</ElButton>
-          <template #dropdown>
-            <ElDropdownMenu>
-              <ElDropdownItem v-for="action in overflowActions(asset)" :key="action.kind" :command="action.kind" :class="{ 'is-danger': action.kind === 'uninstall' }">{{ action.label }}</ElDropdownItem>
-            </ElDropdownMenu>
+      <ElTableColumn type="selection" width="54" align="center" reserve-selection />
+      <ElTableColumn label="资源" min-width="420">
+        <template #default="{ row }">
+          <template v-for="asset in [asAsset(row)]" :key="asset.id">
+          <button class="asset-row-main" :aria-label="`查看 ${asset.name}`" @click.stop="emit('select', asset.id)">
+            <span class="asset-copy">
+              <span class="asset-name-line">
+                <strong>{{ asset.name }}</strong>
+              </span>
+              <span
+                v-if="(sourceKind !== 'central' && asset.agentId) || installationMethod(asset)"
+                class="asset-tag-line"
+              >
+                <ElTag v-if="sourceKind !== 'central' && asset.agentId" class="platform-tag" effect="plain" size="small">
+                  {{ agentName(asset.agentId) }}
+                </ElTag>
+                <ElTag
+                  v-if="installationMethod(asset)"
+                  class="installation-method-tag"
+                  :class="`is-${installationMethod(asset)}`"
+                  effect="plain"
+                  size="small"
+                >{{ installationMethodLabel(asset) }}</ElTag>
+              </span>
+              <small v-if="asset.group || asset.description" class="asset-meta-line">
+                <span v-if="asset.group">{{ asset.group }}</span>
+                <span v-if="asset.group && asset.description" aria-hidden="true"> · </span>
+                <span v-if="asset.description">{{ asset.description }}</span>
+              </small>
+            </span>
+          </button>
           </template>
-        </ElDropdown>
-      </div>
-    </article>
-    </div>
+        </template>
+      </ElTableColumn>
+      <ElTableColumn label="状态" width="116" align="right">
+        <template #default="{ row }">
+          <template v-for="asset in [asAsset(row)]" :key="asset.id">
+          <ElTag class="status-tag" :type="displayStatusType(asset)" effect="plain" size="small">{{ displayStatus(asset) }}</ElTag>
+          </template>
+        </template>
+      </ElTableColumn>
+      <ElTableColumn label="操作" width="154" align="right">
+        <template #default="{ row }">
+          <template v-for="asset in [asAsset(row)]" :key="asset.id">
+          <div class="asset-row-management" @click.stop>
+            <ElButton
+              v-if="primaryAction(asset)"
+              class="asset-primary-action"
+              :type="primaryAction(asset)!.kind === 'uninstall' ? 'danger' : 'primary'"
+              plain
+              size="small"
+              :aria-label="`${primaryAction(asset)!.label} ${asset.name}`"
+              @click="runAction(primaryAction(asset)!, asset)"
+            >{{ primaryAction(asset)!.label }}</ElButton>
+            <ElDropdown v-if="overflowActions(asset).length" trigger="click" @command="(kind: string) => runAction(overflowActions(asset).find((item) => item.kind === kind)!, asset)">
+              <ElButton class="asset-overflow-action" text size="small" :aria-label="`更多操作 ${asset.name}`">···</ElButton>
+              <template #dropdown>
+                <ElDropdownMenu>
+                  <ElDropdownItem v-for="action in overflowActions(asset)" :key="action.kind" :command="action.kind" :class="{ 'is-danger': action.kind === 'uninstall' }">{{ action.label }}</ElDropdownItem>
+                </ElDropdownMenu>
+              </template>
+            </ElDropdown>
+          </div>
+          </template>
+        </template>
+      </ElTableColumn>
+    </ElTable>
   </div>
 </template>

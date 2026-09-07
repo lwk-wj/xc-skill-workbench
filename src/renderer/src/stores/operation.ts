@@ -94,7 +94,7 @@ export const useOperationStore = defineStore('operation', () => {
         kind: kind.value,
         asset: { source: plainSource(source.value), assetId: selectedAsset.id },
         target,
-        method: kind.value === 'install' || kind.value === 'update' ? method.value : null,
+        method: kind.value === 'install' ? method.value : null,
         overwriteModified: false,
         ...(replaceExistingSource.value ? { replaceExistingSource: true } : {}),
       }))
@@ -127,7 +127,8 @@ export const useOperationStore = defineStore('operation', () => {
     agents.value = input.agents
     location.value = input.location ?? null
     allowSymlink.value = input.allowSymlink ?? true
-    scope.value = input.location ? (input.location.projectId ? 'project' : 'global') : (input.scope ?? 'global')
+    const defaultScope = input.kind === 'install' && input.projects.length ? 'project' : 'global'
+    scope.value = input.location ? (input.location.projectId ? 'project' : 'global') : (input.scope ?? defaultScope)
     projectId.value = input.location?.projectId ?? input.projectId ?? input.projects[0]?.id
     selectedAgents.value = input.location ? [input.location.agentId] : input.agents.filter((agent) => agent.enabled).map((agent) => agent.id)
     method.value = 'copy'

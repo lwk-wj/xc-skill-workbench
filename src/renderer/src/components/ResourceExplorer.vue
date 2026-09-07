@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { RefreshRight } from '@element-plus/icons-vue'
+import { Plus, RefreshRight } from '@element-plus/icons-vue'
 import { ElButton, ElDropdown, ElDropdownItem, ElDropdownMenu, ElInput, ElOption, ElSelect } from 'element-plus'
 import { useExplorerStore } from '../stores/explorer'
 import AssetList from './AssetList.vue'
@@ -16,6 +16,7 @@ const emit = defineEmits<{
   'asset-selected': []
   'asset-action': [kind: string, asset: AssetRecord, location?: StatusLocation]
   'batch-action': [kind: BatchActionKind, assets: AssetRecord[]]
+  'install-new-resource': []
 }>()
 const selectedAssetIds = ref<string[]>([])
 const tabs: Array<{ value: AssetType; label: string }> = [
@@ -26,6 +27,7 @@ const tabs: Array<{ value: AssetType; label: string }> = [
 
 const chooseBranch = (branch: string): void => { void explorer.selectBranch(branch) }
 const pullRepository = (): void => { void explorer.refreshCurrentSource() }
+const rescanLocalSource = (): void => { void explorer.refreshCurrentSource() }
 const selectAsset = (assetId: string): void => {
   explorer.selectedAssetId = assetId
   emit('asset-selected')
@@ -81,6 +83,25 @@ watch(
             {{ explorer.loading ? '正在拉取' : '拉取更新' }}
           </ElButton>
           <span class="branch-button repository-branch-badge">分支：<span class="branch-value">{{ explorer.selectedSource.branch }}</span></span>
+        </div>
+        <div v-else class="repository-actions">
+          <ElButton
+            v-if="explorer.selectedSource.kind === 'global' || explorer.selectedSource.kind === 'project'"
+            class="repository-pull-button project-install-button"
+            :icon="Plus"
+            @click="emit('install-new-resource')"
+          >
+            安装新资源
+          </ElButton>
+          <ElButton
+            class="repository-pull-button"
+            :icon="RefreshRight"
+            :loading="explorer.loading"
+            :disabled="explorer.loading"
+            @click="rescanLocalSource"
+          >
+            {{ explorer.loading ? '正在扫描' : '重新扫描' }}
+          </ElButton>
         </div>
       </div>
       <div v-if="explorer.stale" class="stale-banner">缓存数据 · {{ explorer.cachedAt ?? '时间未知' }}</div>

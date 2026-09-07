@@ -8,6 +8,7 @@ import type { AssetRecord, AssetStatusLocation, SourceSelection } from '../../sr
 
 const active: AssetRecord = {
   id: 'codex:skill-one', type: 'skills', name: 'Skill One', group: 'backend', agentId: 'codex',
+  sourceRelativePath: 'backend/skills/skill-one',
   path: '/project/.codex/skills/skill-one', entryPath: '/project/.codex/skills/skill-one/SKILL.md',
   entryState: 'active', description: 'fixture', version: '1.0.0',
 }
@@ -28,13 +29,20 @@ const frozenLocation: AssetStatusLocation = {
   status: { ...location.status, status: 'frozen' },
 }
 
+const symlinkLocation: AssetStatusLocation = {
+  ...location,
+  method: 'symlink',
+}
+
 describe('asset action policy', () => {
   it.each([
     ['install', 'central', active, null, true, null],
     ['install', 'project', active, location, false, '只有仓库资源可以安装'],
     ['freeze', 'project', active, location, true, null],
+    ['freeze', 'project', active, symlinkLocation, false, '软链接资源不支持冻结'],
     ['freeze', 'project', frozen, frozenLocation, false, '资源已经冻结'],
     ['thaw', 'project', frozen, frozenLocation, true, null],
+    ['thaw', 'project', frozen, { ...frozenLocation, method: 'symlink' }, false, '软链接资源不支持解冻'],
     ['thaw', 'project', active, location, false, '资源尚未冻结'],
     ['uninstall', 'project', active, location, true, null],
     ['uninstall', 'project', active, null, false, '缺少受管安装位置'],
@@ -59,6 +67,10 @@ describe('asset action policy', () => {
       .toEqual({ kind: 'thaw', label: '解冻' })
     expect(primaryAssetAction({ sourceKind: 'project', asset: active, location }))
       .toEqual({ kind: 'freeze', label: '冻结' })
+    expect(primaryAssetAction({ sourceKind: 'project', asset: active, location: symlinkLocation }))
+      .toEqual({ kind: 'uninstall', label: '卸载' })
+    expect(overflowAssetActions({ sourceKind: 'project', asset: active, location: symlinkLocation }))
+      .toEqual([])
   })
 
   it('keeps recovery and uninstall available when the source was removed', () => {

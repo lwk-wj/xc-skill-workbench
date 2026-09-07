@@ -39,7 +39,7 @@ const refreshPlans = (): void => { void operation.refreshPlans() }
           </ElCheckboxGroup>
         </fieldset>
       </div>
-      <fieldset v-if="operation.kind === 'install' || operation.kind === 'update'">
+      <fieldset v-if="operation.kind === 'install'">
         <legend>安装方式</legend>
         <ElRadioGroup v-model="operation.method" aria-label="安装方式" @change="refreshPlans">
           <ElRadio value="copy">复制</ElRadio>

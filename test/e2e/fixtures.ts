@@ -50,7 +50,7 @@ export const test = base.extend<{ e2e: E2EContext }>({
     await execFile('git', ['config', 'user.name', 'XC Skills E2E'], { cwd: alternateRepo })
     await execFile('git', ['add', '.'], { cwd: alternateRepo })
     await execFile('git', ['commit', '-m', 'replacement fixture'], { cwd: alternateRepo })
-    await writeFile(config, JSON.stringify({ mode: 'local', repoPath: repo, defaultBranch: 'main' }, null, 2))
+    await writeFile(config, JSON.stringify({ mode: 'remote', remoteUrl: repo, defaultBranch: 'main' }, null, 2))
     const app = await electron.launch({
       args: [resolve('out/main/index.js')],
       env: {

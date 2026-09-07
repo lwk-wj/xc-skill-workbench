@@ -8,15 +8,15 @@ import {
   ElInput,
   ElMessageBox,
   ElOption,
-  ElRadioButton,
-  ElRadioGroup,
   ElSelect,
 } from 'element-plus'
 import type {
   RepositoryConfigInput,
   XcSkillsConfig,
   LegacyInstallationMigrationPreview,
+  SourceLayoutMigrationPreview,
 } from '../../../../shared/ipc.js'
+import { assetStorePathForRoot, resourceRootFromAssetStore } from '../../../../shared/resource-storage.js'
 import ErrorNotice from '../../components/ErrorNotice.vue'
 
 const props = defineProps<{ config: XcSkillsConfig }>()
@@ -26,25 +26,28 @@ const normalizeGroups = (groups: string[]): string[] =>
   [...new Set(groups.map((group) => group.trim()).filter(Boolean))]
 
 const toEditableConfig = (config: XcSkillsConfig): RepositoryConfigInput => ({
-  mode: config.mode ?? (config.remoteUrl ? 'remote' : 'local'),
+  mode: 'remote',
   repoPath: config.repoPath?.trim() ?? '',
   remoteUrl: config.remoteUrl?.trim() ?? '',
   defaultBranch: config.defaultBranch?.trim() || 'main',
   defaultGroups: normalizeGroups(config.defaultGroups ?? []),
-  assetStorePath: config.assetStorePath?.trim() ?? '',
+  assetStorePath: config.assetStorePath?.trim()
+    ? resourceRootFromAssetStore(config.assetStorePath)
+    : '',
 })
 
 const normalize = (value: RepositoryConfigInput): RepositoryConfigInput => ({
-  mode: value.mode,
+  mode: 'remote',
   repoPath: value.repoPath.trim(),
   remoteUrl: value.remoteUrl.trim(),
   defaultBranch: value.defaultBranch.trim(),
   defaultGroups: normalizeGroups(value.defaultGroups),
-  ...(value.assetStorePath?.trim() ? { assetStorePath: value.assetStorePath.trim() } : {}),
+  ...(value.assetStorePath?.trim() ? { assetStorePath: assetStorePathForRoot(value.assetStorePath) } : {}),
 })
 
 const serialize = (value: RepositoryConfigInput): string => JSON.stringify(normalize(value))
 const baseline = ref(toEditableConfig(props.config))
+const baselineStorePath = ref(props.config.assetStorePath?.trim() ?? '')
 const form = reactive<RepositoryConfigInput>({ ...baseline.value })
 const saving = ref(false)
 const error = ref<unknown>(null)
@@ -52,6 +55,9 @@ const saved = ref(false)
 const legacyMigration = ref<LegacyInstallationMigrationPreview | null>(null)
 const migratingLegacy = ref(false)
 const legacyMigrationError = ref<unknown>(null)
+const sourceLayoutMigration = ref<SourceLayoutMigrationPreview | null>(null)
+const migratingSourceLayout = ref(false)
+const sourceLayoutMigrationError = ref<unknown>(null)
 
 const loadLegacyMigration = async (): Promise<void> => {
   const preview = window.xcSkills.repositories.previewLegacyInstallationMigration
@@ -82,18 +88,55 @@ const migrateLegacyInstallations = async (): Promise<void> => {
   }
 }
 
-onMounted(() => { void loadLegacyMigration() })
+const loadSourceLayoutMigration = async (): Promise<void> => {
+  const preview = window.xcSkills.repositories.previewSourceLayoutMigration
+  if (!preview) return
+  try {
+    sourceLayoutMigration.value = await preview()
+  } catch (cause) {
+    sourceLayoutMigrationError.value = cause
+  }
+}
+
+const migrateSourceLayout = async (): Promise<void> => {
+  const preview = sourceLayoutMigration.value
+  if (!preview?.moves.length || preview.conflicts.length) return
+  migratingSourceLayout.value = true
+  sourceLayoutMigrationError.value = null
+  try {
+    await ElMessageBox.confirm(
+      `将按仓库原始目录整理 ${preview.moves.length} 个资源，并重建 ${preview.symlinkCount} 个软链接；${preview.copyCount} 个复制安装保持不变。`,
+      '整理资源存储层级',
+      { confirmButtonText: '确认整理', cancelButtonText: '暂不整理', type: 'warning' },
+    )
+    sourceLayoutMigration.value = await window.xcSkills.repositories.executeSourceLayoutMigration(preview.token)
+  } catch (cause) {
+    sourceLayoutMigrationError.value = cause
+  } finally {
+    migratingSourceLayout.value = false
+  }
+}
+
+onMounted(() => {
+  void loadLegacyMigration()
+  void loadSourceLayoutMigration()
+})
 
 watch(() => props.config, (next) => {
   const editable = toEditableConfig(next)
   if (serialize(editable) === serialize(baseline.value)) return
   baseline.value = editable
+  baselineStorePath.value = next.assetStorePath?.trim() ?? ''
   Object.assign(form, editable)
   error.value = null
   saved.value = false
 }, { deep: true })
 
-const dirty = computed(() => serialize(form) !== serialize(baseline.value))
+const storageLayoutPending = computed(() => {
+  const normalizedStore = normalize(baseline.value).assetStorePath ?? ''
+  return Boolean(baselineStorePath.value && normalizedStore !== baselineStorePath.value)
+})
+const dirty = computed(() => serialize(form) !== serialize(baseline.value) || storageLayoutPending.value)
 const knownGroups = computed(() => normalizeGroups([
   ...baseline.value.defaultGroups,
   ...form.defaultGroups,
@@ -102,8 +145,7 @@ const knownGroups = computed(() => normalizeGroups([
 const validationMessage = (): string | null => {
   const candidate = normalize(form)
   if (!candidate.defaultBranch) return '默认分支不能为空'
-  if (candidate.mode === 'local' && !candidate.repoPath) return '请选择本地仓库路径'
-  if (candidate.mode === 'remote' && !candidate.remoteUrl) return '请填写远程仓库 URL'
+  if (!candidate.remoteUrl) return '请填写远程仓库 URL'
   return null
 }
 
@@ -113,17 +155,6 @@ const chooseAssetStorePath = async (): Promise<void> => {
   try {
     const path = await window.xcSkills.repositories.chooseAssetStorePath()
     if (path) form.assetStorePath = path
-  } catch (cause) {
-    error.value = cause
-  }
-}
-
-const chooseLocalPath = async (): Promise<void> => {
-  error.value = null
-  saved.value = false
-  try {
-    const path = await window.xcSkills.repositories.chooseLocalPath()
-    if (path) form.repoPath = path
   } catch (cause) {
     error.value = cause
   }
@@ -141,7 +172,7 @@ const submit = async (): Promise<void> => {
   saved.value = false
   try {
     const candidate = normalize(form)
-    if (candidate.assetStorePath && candidate.assetStorePath !== baseline.value.assetStorePath) {
+    if (candidate.assetStorePath && candidate.assetStorePath !== baselineStorePath.value) {
       const preview = await window.xcSkills.repositories.previewAssetStoreMigration(candidate.assetStorePath ?? '')
       if (preview.conflicts.length > 0) {
         throw new Error(preview.conflicts.map((item) => `${item.path}：${item.reason}`).join('\n'))
@@ -156,6 +187,7 @@ const submit = async (): Promise<void> => {
     const result = await window.xcSkills.repositories.updateConfig(candidate)
     const next = toEditableConfig(result.config)
     baseline.value = next
+    baselineStorePath.value = result.config.assetStorePath?.trim() ?? ''
     Object.assign(form, next)
     saved.value = true
     emit('saved', result.config)
@@ -190,6 +222,37 @@ const submit = async (): Promise<void> => {
     </section>
     <ErrorNotice v-if="legacyMigrationError" :error="legacyMigrationError as Error" />
 
+    <section
+      v-if="sourceLayoutMigration?.moves.length || sourceLayoutMigration?.unresolved.length || sourceLayoutMigration?.conflicts.length"
+      class="legacy-migration-card"
+      aria-label="资源存储层级迁移"
+    >
+      <div>
+        <strong>资源层级等待迁移</strong>
+        <p>
+          {{ sourceLayoutMigration.moves.length }} 项可迁移
+          <template v-if="sourceLayoutMigration.unresolved.length">，{{ sourceLayoutMigration.unresolved.length }} 项来源待确认</template>
+          <template v-if="sourceLayoutMigration.conflicts.length">，{{ sourceLayoutMigration.conflicts.length }} 项存在冲突</template>
+        </p>
+      </div>
+      <ElButton
+        v-if="sourceLayoutMigration.moves.length && !sourceLayoutMigration.conflicts.length"
+        type="primary"
+        plain
+        :loading="migratingSourceLayout"
+        @click="migrateSourceLayout"
+      >按仓库层级整理</ElButton>
+      <ul v-if="sourceLayoutMigration.unresolved.length || sourceLayoutMigration.conflicts.length">
+        <li v-for="item in sourceLayoutMigration.unresolved" :key="item.entityId">
+          <code>{{ item.fromRelativePath }}</code>：来源路径需要确认
+        </li>
+        <li v-for="item in sourceLayoutMigration.conflicts" :key="item.path">
+          <code>{{ item.path }}</code>：{{ item.reason }}
+        </li>
+      </ul>
+    </section>
+    <ErrorNotice v-if="sourceLayoutMigrationError" :error="sourceLayoutMigrationError as Error" />
+
     <div class="repository-config-heading">
       <div class="repository-config-mark" aria-hidden="true">↗</div>
       <div>
@@ -198,29 +261,7 @@ const submit = async (): Promise<void> => {
       </div>
     </div>
 
-    <ElFormItem class="repository-mode-field">
-      <span class="form-label" aria-hidden="true">仓库模式</span>
-      <ElRadioGroup v-model="form.mode" aria-label="仓库模式">
-        <ElRadioButton value="local">本地</ElRadioButton>
-        <ElRadioButton value="remote">远程</ElRadioButton>
-      </ElRadioGroup>
-    </ElFormItem>
-
-    <ElFormItem v-if="form.mode === 'local'">
-      <span class="form-label" aria-hidden="true">本地仓库路径</span>
-      <ElInput
-        v-model="form.repoPath"
-        aria-label="本地仓库路径"
-        placeholder="/Users/me/xc-skills"
-      >
-        <template #append>
-          <ElButton aria-label="选择文件夹" @click="chooseLocalPath">选择文件夹</ElButton>
-        </template>
-      </ElInput>
-      <small class="repository-field-help">选择包含 Skills、Rules 和 Workflows 的仓库目录。</small>
-    </ElFormItem>
-
-    <ElFormItem v-else>
+    <ElFormItem>
       <span class="form-label" aria-hidden="true">远程仓库 URL</span>
       <ElInput
         v-model="form.remoteUrl"
@@ -256,13 +297,15 @@ const submit = async (): Promise<void> => {
       <ElInput
         v-model="form.assetStorePath"
         aria-label="资源存储目录"
-        placeholder="/Users/me/.xc-skills/store"
+        placeholder="/Users/me/.xc-skills"
       >
         <template #append>
           <ElButton aria-label="选择资源存储目录" @click="chooseAssetStorePath">选择文件夹</ElButton>
         </template>
       </ElInput>
-      <small class="repository-field-help">Skills、Rules 和 Workflows 的统一实体目录；Agent 安装将链接或复制自这里。</small>
+      <small class="repository-field-help">
+        将在所选目录下创建 repositories 和 store；拉取只更新仓库，手动更新后才会写入 store。
+      </small>
     </ElFormItem>
 
     <ErrorNotice v-if="error" :error="error as Error" />

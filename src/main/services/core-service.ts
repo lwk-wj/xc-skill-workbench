@@ -25,6 +25,8 @@ import {
   type ManagedAssetRecord,
   type ManagedInstallationRecord,
   type ManagedSourceRecord,
+  type SourceLayoutCandidate,
+  type SourceLayoutMigrationPreview as CoreSourceLayoutMigrationPreview,
 } from 'xc-skills/core'
 import type {
   AgentDefinition, AssetDetail, AssetRecord, AssetSelection, AssetStatusRecord as DesktopStatus,
@@ -33,10 +35,14 @@ import type {
   ThirdPartyRepositoryInput, ThirdPartyRepositoryView, RelinkInstallationInput, SourceConflict,
   AssetStoreMigrationPreview,
   LegacyInstallationMigrationPreview,
+  SourceLayoutMigrationPreview,
+  ManagedEntityRepairPreview,
+  ManagedEntityRepairResult,
 } from '../../shared/ipc.js'
 import {
   AssetRecordSchema, AssetDetailSchema, AssetStatusRecordSchema, XcSkillsConfigSchema,
 } from '../../shared/ipc.js'
+import { assetStorePathForRoot, repositoryCachePathForRoot, resourceRootFromAssetStore } from '../../shared/resource-storage.js'
 import type { AppStore } from './app-store.js'
 import type { ThirdPartyRepositoryService } from './third-party-repository-service.js'
 
@@ -104,7 +110,7 @@ const sourceUnavailableStatus = (reason = '来源仓库不可用'): DesktopStatu
 export class CoreService {
   private readonly appStore: AppStore
   private readonly configPath: string | undefined
-  private readonly cacheRoot: string
+  private readonly cacheRootOverride: string | null
   private readonly chooseDirectory: ChooseDirectory
   private readonly log?: CoreServiceOptions['log']
   private readonly thirdPartyRepositories?: ThirdPartyRepositoryService
@@ -139,6 +145,17 @@ export class CoreService {
     }>
     conflicts: LegacyInstallationMigrationPreview['conflicts']
   }>()
+  private readonly pendingSourceLayoutMigrations = new Map<string, {
+    preview: CoreSourceLayoutMigrationPreview | null
+    candidates: SourceLayoutCandidate[]
+    expiresAt: number
+  }>()
+  private readonly pendingManagedRepairs = new Map<string, {
+    installationId: string
+    entityId: string
+    candidate: SourceLayoutCandidate
+    expiresAt: number
+  }>()
 
   private async installMethod(path: string): Promise<'copy' | 'symlink' | null> {
     try {
@@ -155,7 +172,7 @@ export class CoreService {
   constructor(options: CoreServiceOptions) {
     this.appStore = options.appStore
     this.configPath = options.configPath
-    this.cacheRoot = resolve(options.cacheRoot ?? join(homedir(), '.cache', 'xc-skills'))
+    this.cacheRootOverride = options.cacheRoot ? resolve(options.cacheRoot) : null
     this.chooseDirectory = options.chooseDirectory ?? (async () => null)
     this.log = options.log
     this.thirdPartyRepositories = options.thirdPartyRepositories
@@ -167,13 +184,48 @@ export class CoreService {
     }, ...options.core } as typeof import('xc-skills/core')
   }
 
+  private repositoryCacheRoot(config: XcSkillsConfig, source = 'xcSkill'): string {
+    if (this.cacheRootOverride) return this.cacheRootOverride
+    const resourceRoot = resourceRootFromAssetStore(resolveAssetStorePath(config))
+    return resolve(repositoryCachePathForRoot(resourceRoot), source)
+  }
+
+  private async normalizeEmptyLegacyResourceRoot(config: XcSkillsConfig): Promise<XcSkillsConfig> {
+    const currentStore = resolveAssetStorePath(config)
+    const resourceRoot = resourceRootFromAssetStore(currentStore)
+    const normalizedStore = resolve(assetStorePathForRoot(resourceRoot))
+    if (currentStore === normalizedStore || config.mode !== 'remote') return config
+
+    const repositoriesPath = resolve(repositoryCachePathForRoot(resourceRoot))
+    const repositoriesExist = await lstat(repositoriesPath)
+      .then((entry) => entry.isDirectory())
+      .catch(() => false)
+    if (!repositoriesExist) return config
+
+    const manifest = await this.managedStore.readManifest()
+    if (manifest.assets.length > 0 || manifest.installations.length > 0) return config
+
+    const rootEntries = await readdir(resourceRoot).catch(() => [])
+    const safeEntries = new Set(['.DS_Store', basename(repositoriesPath), basename(normalizedStore)])
+    if (rootEntries.some((entry) => !safeEntries.has(entry))) return config
+
+    await mkdir(normalizedStore, { recursive: true })
+    const normalized = { ...config, assetStorePath: normalizedStore }
+    await this.core.writeConfig(normalized, this.configPath)
+    await this.log?.write('info', 'normalized empty legacy resource root', {
+      from: currentStore,
+      to: normalizedStore,
+    })
+    return normalized
+  }
+
   private async ensureConfig(): Promise<XcSkillsConfig> {
     if (!this.recoveredManagedStore) {
       await this.managedStore.recoverMigration()
       this.recoveredManagedStore = true
     }
     if (this.config) return this.config
-    this.config = await this.core.readConfig(this.configPath)
+    this.config = await this.normalizeEmptyLegacyResourceRoot(await this.core.readConfig(this.configPath))
     this.config = { ...this.config, assetStorePath: resolveAssetStorePath(this.config) }
     this.selectedBranch = this.config.defaultBranch ?? 'main'
     return this.config
@@ -182,7 +234,11 @@ export class CoreService {
   private async resolveSource(force = false) {
     const config = await this.ensureConfig()
     if (!force && this.repository) return this.repository
-    this.repository = await this.core.resolveRepositorySource(config, this.selectedBranch ?? config.defaultBranch ?? 'main', this.cacheRoot)
+    this.repository = await this.core.resolveRepositorySource(
+      config,
+      this.selectedBranch ?? config.defaultBranch ?? 'main',
+      this.repositoryCacheRoot(config),
+    )
     return this.repository
   }
 
@@ -226,8 +282,18 @@ export class CoreService {
       const rel = relative(resolve(parent), resolve(child))
       return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`))
     }
-    if (inside(this.cacheRoot, preview.toPath) || inside(preview.toPath, this.cacheRoot)) {
-      preview.conflicts.push({ path: this.cacheRoot, reason: '资源存储目录与仓库缓存目录重叠' })
+    if (this.cacheRootOverride && (inside(this.cacheRootOverride, preview.toPath) || inside(preview.toPath, this.cacheRootOverride))) {
+      preview.conflicts.push({ path: this.cacheRootOverride, reason: '资源存储目录与仓库缓存目录重叠' })
+    }
+    if (!this.cacheRootOverride) {
+      const fromRepositories = repositoryCachePathForRoot(resourceRootFromAssetStore(preview.fromPath))
+      const toRepositories = repositoryCachePathForRoot(resourceRootFromAssetStore(preview.toPath))
+      if (fromRepositories !== toRepositories) {
+        const targetEntries = await readdir(toRepositories).catch(() => [])
+        if (targetEntries.length > 0) {
+          preview.conflicts.push({ path: toRepositories, reason: '目标资源目录已经包含仓库缓存' })
+        }
+      }
     }
     const expiresAt = Date.now() + this.planExpiryMs
     this.pendingMigrations.set(preview.id, { preview, expiresAt })
@@ -238,9 +304,40 @@ export class CoreService {
     const pending = this.pendingMigrations.get(token)
     this.pendingMigrations.delete(token)
     if (!pending || pending.expiresAt <= Date.now()) throw new Error('unknown or expired migration token')
-    await this.managedStore.migrate(pending.preview)
-    this.config = null
-    return this.ensureConfig()
+    const fromRepositories = repositoryCachePathForRoot(resourceRootFromAssetStore(pending.preview.fromPath))
+    const toRepositories = repositoryCachePathForRoot(resourceRootFromAssetStore(pending.preview.toPath))
+    const nestedStoreMigration = dirname(pending.preview.toPath) === pending.preview.fromPath
+    const parkedRepositories = nestedStoreMigration && await lstat(fromRepositories).then(() => true).catch(() => false)
+      ? `${pending.preview.fromPath}.xc-repositories-${pending.preview.id}`
+      : null
+    try {
+      if (parkedRepositories) {
+        await rm(parkedRepositories, { recursive: true, force: true })
+        await rename(fromRepositories, parkedRepositories)
+      }
+      await this.managedStore.migrate(pending.preview)
+      const sourceRepositories = parkedRepositories ?? fromRepositories
+      if (sourceRepositories !== toRepositories && await lstat(sourceRepositories).then(() => true).catch(() => false)) {
+        await mkdir(dirname(toRepositories), { recursive: true })
+        try {
+          await rename(sourceRepositories, toRepositories)
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error
+          await cp(sourceRepositories, toRepositories, { recursive: true })
+          await rm(sourceRepositories, { recursive: true, force: true })
+        }
+      }
+      this.thirdPartyRepositories?.invalidateSnapshots?.()
+      this.repository = null
+      this.config = null
+      return this.ensureConfig()
+    } catch (error) {
+      if (parkedRepositories && await lstat(parkedRepositories).then(() => true).catch(() => false)) {
+        await mkdir(dirname(fromRepositories), { recursive: true })
+        await rename(parkedRepositories, fromRepositories).catch(() => undefined)
+      }
+      throw error
+    }
   }
   async previewLegacyInstallationMigration(): Promise<LegacyInstallationMigrationPreview> {
     const records = await this.appStore.listInstallationSources()
@@ -254,7 +351,15 @@ export class CoreService {
       const targetPath = await logicalPath(record.targetPath)
       try {
         if (record.frozen) throw new Error('冻结的旧安装需要先解冻后再迁移')
-        await lstat(targetPath)
+        try {
+          await lstat(targetPath)
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            await this.appStore.removeInstallationSource(record.id)
+            continue
+          }
+          throw error
+        }
         if (await this.managedInstallationAt(targetPath)) throw new Error('目标位置已经存在受管安装记录')
         const source = await this.resolveRecordedSource(record)
         const method = record.method ?? await this.installMethod(targetPath) ?? 'copy'
@@ -287,7 +392,7 @@ export class CoreService {
     const pending = this.pendingLegacyMigrations.get(token)
     this.pendingLegacyMigrations.delete(token)
     if (!pending || pending.expiresAt <= Date.now()) throw new Error('unknown or expired legacy migration token')
-    const migrationRoot = join(this.cacheRoot, 'legacy-installation-migrations', token)
+    const migrationRoot = join(this.repositoryCacheRoot(await this.ensureConfig()), 'legacy-installation-migrations', token)
     const completed: Array<{
       record: InstallationSourceRecord
       installationId: string
@@ -347,6 +452,141 @@ export class CoreService {
     }
     return this.previewLegacyInstallationMigration()
   }
+
+  private async sourceLayoutCandidates(manifestAssets: ManagedAssetRecord[]): Promise<SourceLayoutCandidate[]> {
+    const sources = new Map<string, ManagedSourceRecord>()
+    for (const entity of manifestAssets) sources.set(`${entity.source.kind}:${entity.source.id}`, entity.source)
+    const candidates: SourceLayoutCandidate[] = []
+    for (const source of sources.values()) {
+      try {
+        if (source.kind === 'third-party') {
+          const repository = await this.requireThirdPartyRepositories().resolve(source.id)
+          for (let index = 0; index < repository.assets.length; index += 1) {
+            candidates.push({
+              source,
+              asset: (repository.coreAssets[index] ?? repository.assets[index]) as CoreAsset,
+            })
+          }
+          continue
+        }
+        const currentSource = await this.managedSource({ kind: 'central' })
+        if (currentSource.id !== source.id) continue
+        const repository = await this.resolveSource()
+        const assets = await this.core.scanAssets({ root: repository.root })
+        candidates.push(...assets.map((asset) => ({ source, asset })))
+      } catch {
+        // An unavailable repository is represented by an empty candidate set so Core can
+        // distinguish it from a repository that was scanned but no longer contains an asset.
+      }
+    }
+    return candidates
+  }
+
+  private publicSourceLayoutPreview(
+    token: string,
+    expiresAt: number,
+    preview: CoreSourceLayoutMigrationPreview | null,
+    fallbackConflict?: SourceLayoutMigrationPreview['conflicts'][number],
+  ): SourceLayoutMigrationPreview {
+    return {
+      token,
+      moves: preview?.moves ?? [],
+      unresolved: preview?.unresolved ?? [],
+      symlinkCount: preview?.symlinkTargets.length ?? 0,
+      copyCount: preview?.copyTargets.length ?? 0,
+      conflicts: preview?.conflicts ?? (fallbackConflict ? [fallbackConflict] : []),
+      expiresAt: new Date(expiresAt).toISOString(),
+    }
+  }
+
+  async previewSourceLayoutMigration(): Promise<SourceLayoutMigrationPreview> {
+    await this.ensureConfig()
+    const status = await this.managedStore.layoutStatus()
+    const token = randomUUID()
+    const expiresAt = Date.now() + this.planExpiryMs
+    if (status.version === 3) {
+      this.pendingSourceLayoutMigrations.set(token, { preview: null, candidates: [], expiresAt })
+      return this.publicSourceLayoutPreview(token, expiresAt, null)
+    }
+    if (status.version === 1) {
+      this.pendingSourceLayoutMigrations.set(token, { preview: null, candidates: [], expiresAt })
+      return this.publicSourceLayoutPreview(token, expiresAt, null, {
+        path: this.managedStore.manifestPath,
+        reason: '统一资源目录仍是旧版布局，请先完成旧版实体目录迁移',
+      })
+    }
+    const manifest = await this.managedStore.readManifest()
+    const candidates = await this.sourceLayoutCandidates(manifest.assets)
+    const preview = await this.managedStore.previewSourceLayoutMigration(candidates)
+    this.pendingSourceLayoutMigrations.set(token, { preview, candidates, expiresAt })
+    return this.publicSourceLayoutPreview(token, expiresAt, preview)
+  }
+
+  async executeSourceLayoutMigration(token: string): Promise<SourceLayoutMigrationPreview> {
+    const pending = this.pendingSourceLayoutMigrations.get(token)
+    this.pendingSourceLayoutMigrations.delete(token)
+    if (!pending || pending.expiresAt <= Date.now()) throw new Error('unknown or expired source-layout migration token')
+    if (pending.preview) {
+      if (pending.preview.conflicts.length > 0) throw new Error('source-layout migration has conflicts')
+      await this.managedStore.migrateSourceLayout(pending.preview, pending.candidates)
+      this.catalog.clear()
+      this.coreCatalog.clear()
+      this.metadata.clear()
+      this.locations.clear()
+    } else if ((await this.managedStore.layoutStatus()).version !== 3) {
+      throw new Error('legacy managed store layout must be migrated before source paths can be restored')
+    }
+    return this.previewSourceLayoutMigration()
+  }
+
+  async previewManagedEntityRepair(installationId: string): Promise<ManagedEntityRepairPreview> {
+    await this.ensureConfig()
+    const manifest = await this.managedStore.readManifest()
+    const installation = manifest.installations.find((entry) => entry.id === installationId)
+    if (!installation) throw new Error('unknown managed installation id')
+    const entity = manifest.assets.find((entry) => entry.id === installation.managedAssetId)
+    if (!entity) throw new Error('managed asset record is missing')
+    if (entity.sourceRelativePath !== null) throw new Error('managed asset already has a repository-relative source')
+    const candidates = (await this.sourceLayoutCandidates(manifest.assets)).filter(({ source, asset }) => (
+      source.kind === entity.source.kind
+      && source.id === entity.source.id
+      && asset.type === entity.asset.type
+      && asset.group === entity.asset.group
+      && asset.name === entity.asset.name
+    ))
+    const expiresAt = Date.now() + this.planExpiryMs
+    const publicCandidates = candidates.map((candidate) => {
+      const candidateToken = randomUUID()
+      this.pendingManagedRepairs.set(candidateToken, { installationId, entityId: entity.id, candidate, expiresAt })
+      return {
+        candidateToken,
+        repositoryLabel: candidate.source.name,
+        sourceRelativePath: candidate.asset.sourceRelativePath,
+      }
+    })
+    return { installationId, entityId: entity.id, candidates: publicCandidates, expiresAt: new Date(expiresAt).toISOString() }
+  }
+
+  async executeManagedEntityRepair(candidateToken: string): Promise<ManagedEntityRepairResult> {
+    const pending = this.pendingManagedRepairs.get(candidateToken)
+    this.pendingManagedRepairs.delete(candidateToken)
+    if (!pending || pending.expiresAt <= Date.now()) throw new Error('unknown or expired managed repair token')
+    const result = await this.managedStore.repairUnresolvedEntity(pending.entityId, pending.candidate)
+    for (const [token, candidate] of this.pendingManagedRepairs) {
+      if (candidate.entityId === pending.entityId) this.pendingManagedRepairs.delete(token)
+    }
+    this.catalog.clear()
+    this.coreCatalog.clear()
+    this.metadata.clear()
+    this.locations.clear()
+    return {
+      installationId: pending.installationId,
+      entityId: result.entity.id,
+      fromRelativePath: result.fromRelativePath,
+      toRelativePath: result.toRelativePath,
+      rebuiltSymlinkCount: result.rebuiltSymlinkTargets.length,
+    }
+  }
   async updateConfig(input: RepositoryConfigInput): Promise<RepositoryConfigUpdateResult> {
     const current = await this.ensureConfig()
     const candidate: XcSkillsConfig = {
@@ -365,7 +605,7 @@ export class CoreService {
       const repository = await this.core.resolveRepositorySource(
         candidate,
         input.defaultBranch,
-        this.cacheRoot,
+        this.repositoryCacheRoot(candidate),
       )
       await this.core.scanAssets({ root: repository.root })
       await this.core.writeConfig(candidate, this.configPath)
@@ -492,6 +732,10 @@ export class CoreService {
     const state = await this.appStore.read()
     const project = source.kind === 'project' ? state.projects.find((entry) => entry.id === source.projectId) : null
     if (source.kind === 'project' && !project) return []
+    await this.managedStore.reconcileInstallations({
+      scope: source.kind,
+      projectId: project?.id ?? null,
+    })
     const agents = (await this.listAgents()).filter((agent) => agent.enabled)
     for (const agent of agents) {
       const projectRoot = project?.path ?? homedir()
@@ -512,12 +756,17 @@ export class CoreService {
     for (const installation of manifest.installations.filter((entry) => entry.scope === source.kind && entry.projectId === (project?.id ?? null))) {
       const entity = manifest.assets.find((entry) => entry.id === installation.managedAssetId)
       if (!entity || result.some((asset) => asset.agentId === installation.agentId && asset.type === entity.asset.type && asset.name === entity.asset.name)) continue
+      if (installation.method === 'symlink' && (installation.frozen || await this.installMethod(installation.targetPath) !== 'symlink')) {
+        await this.managedStore.uninstall(installation.id)
+        continue
+      }
       const entityPath = join(storeRoot, entity.relativePath)
       const asset = asDesktopAsset({
         id: `${installation.agentId}:${entity.id}`,
         type: entity.asset.type,
         name: entity.asset.name,
         group: entity.asset.group,
+        sourceRelativePath: entity.sourceRelativePath ?? entity.relativePath,
         path: installation.targetPath,
         entryPath: entity.asset.type === 'skills'
           ? join(installation.targetPath, installation.frozen ? 'SKILL.md.xc-disabled' : 'SKILL.md')
@@ -527,7 +776,28 @@ export class CoreService {
         version: entity.asset.version,
         agentId: installation.agentId,
       })
-      const coreAsset = {
+      let coreAsset: CoreAsset | undefined
+      if (entity.asset.type === 'skills') {
+        const scanned = await this.core.scanAssets({
+          root: entityPath,
+          types: ['skills'],
+          layout: 'single-skill',
+          sourceName: entity.asset.name,
+        }) as CoreAsset[]
+        coreAsset = scanned[0]
+      } else {
+        const namespace = manifest.repositories.find((entry) => (
+          entry.sourceKind === entity.source.kind && entry.sourceId === entity.source.id
+        ))
+        if (namespace) {
+          const scanned = await this.core.scanAssets({
+            root: join(storeRoot, namespace.directoryName),
+            types: [entity.asset.type],
+          }) as CoreAsset[]
+          coreAsset = scanned.find((entry) => entry.sourceRelativePath === entity.sourceRelativePath)
+        }
+      }
+      coreAsset ??= {
         ...asset,
         path: entityPath,
         entryPath: entity.asset.type === 'skills' ? join(entityPath, 'SKILL.md') : entityPath,
@@ -609,10 +879,13 @@ export class CoreService {
 
   private async managedInstallationStatus(installation: ManagedInstallationRecord, availableAsset?: CoreAsset): Promise<DesktopStatus> {
     const installed = AssetStatusRecordSchema.parse(await this.managedStore.evaluateInstallation(installation.id))
-    if (!availableAsset) return installed
     const manifest = await this.managedStore.readManifest()
     const entity = manifest.assets.find((entry) => entry.id === installation.managedAssetId)
     if (!entity) return installed
+    if (entity.sourceRelativePath === null) {
+      return sourceUnavailableStatus('受管资源缺少仓库相对路径，请确认来源')
+    }
+    if (!availableAsset) return installed
     const entityPath = join(resolveAssetStorePath(await this.ensureConfig()), entity.relativePath)
     const available = AssetStatusRecordSchema.parse(await this.core.evaluateAssetStatus(availableAsset, entityPath))
     const updateAvailable = available.updateAvailable
@@ -754,6 +1027,19 @@ export class CoreService {
     if (request.target.scope === 'project' && !project) throw new Error('unknown project id')
     const projectRoot = project?.path ?? homedir()
     const targetRoot = this.core.resolveAgentAssetRoot(agent as unknown as CoreAgent, request.target.scope, projectRoot, asset.type)
+    const usesScannedInstallation = (request.kind === 'freeze' || request.kind === 'thaw' || request.kind === 'uninstall')
+      && (request.asset.source.kind === 'project' || request.asset.source.kind === 'global')
+    if (usesScannedInstallation) {
+      const metadata = this.metadata.get(keyFor(request.asset.source, request.asset.assetId))
+      const expectedProjectId = project?.id ?? null
+      if (request.asset.source.kind !== request.target.scope
+        || metadata?.agentId !== request.target.agentId
+        || metadata.projectId !== expectedProjectId) {
+        throw new Error('installed asset does not belong to the requested Agent target')
+      }
+      const targetPath = await logicalPath(asset.path)
+      return { targetRoot: dirname(targetPath), targetPath, projectId: expectedProjectId }
+    }
     const rawTargetPath = join(targetRoot, asset.name)
     const targetPath = await logicalPath(rawTargetPath)
     return { targetRoot: dirname(targetPath), targetPath, projectId: project?.id ?? null }
@@ -785,7 +1071,9 @@ export class CoreService {
   private async resolveManagedEntitySource(entity: ManagedAssetRecord): Promise<{ selection: SourceSelection; asset: AssetRecord; coreAsset: CoreAsset; commit: string | null }> {
     if (entity.source.kind === 'third-party') {
       const repository = await this.requireThirdPartyRepositories().resolve(entity.source.id)
-      const index = repository.assets.findIndex((asset) => asset.type === entity.asset.type && asset.group === entity.asset.group && asset.name === entity.asset.name)
+      const index = repository.assets.findIndex((asset) => entity.sourceRelativePath !== null
+        ? asset.type === entity.asset.type && asset.sourceRelativePath === entity.sourceRelativePath
+        : asset.type === entity.asset.type && asset.group === entity.asset.group && asset.name === entity.asset.name)
       if (index < 0) throw new Error('recorded asset no longer exists in its repository')
       return {
         selection: { kind: 'third-party', repositoryId: repository.repository.id },
@@ -795,7 +1083,9 @@ export class CoreService {
       }
     }
     const assets = await this.scan({ kind: 'central' })
-    const asset = assets.find((candidate) => candidate.type === entity.asset.type && candidate.group === entity.asset.group && candidate.name === entity.asset.name)
+    const asset = assets.find((candidate) => entity.sourceRelativePath !== null
+      ? candidate.type === entity.asset.type && candidate.sourceRelativePath === entity.sourceRelativePath
+      : candidate.type === entity.asset.type && candidate.group === entity.asset.group && candidate.name === entity.asset.name)
     if (!asset) throw new Error('recorded asset no longer exists in the central repository')
     return { selection: { kind: 'central' }, asset, coreAsset: this.coreCatalog.get(keyFor({ kind: 'central' }, asset.id)) ?? asset as unknown as CoreAsset, commit: entity.installedCommit }
   }
@@ -884,8 +1174,15 @@ export class CoreService {
       previous = await this.managedInstallationAt(target.targetPath)
     }
 
-    if ((request.kind === 'freeze' || request.kind === 'thaw' || request.kind === 'uninstall') && !previous) {
+    const unmanagedUninstall = request.kind === 'uninstall' && !previous
+    if ((request.kind === 'freeze' || request.kind === 'thaw') && !previous) {
       throw new Error('this resource has not been migrated to the managed asset store')
+    }
+    if (unmanagedUninstall) {
+      try { await lstat(target.targetPath) } catch { throw new Error('the unmanaged installation no longer exists on disk') }
+    }
+    if ((request.kind === 'freeze' || request.kind === 'thaw') && previous?.method === 'symlink') {
+      throw new Error(`软链接资源不支持${request.kind === 'freeze' ? '冻结' : '解冻'}`)
     }
 
     const conflict = await this.inspectSourceConflict({ ...request, asset: { source: sourceSelection, assetId: sourceAsset.id } })
@@ -896,9 +1193,11 @@ export class CoreService {
     const coreAsset = this.coreCatalog.get(keyFor(sourceSelection, sourceAsset.id))
       ?? (thirdParty?.coreAssets[thirdParty.assets.findIndex((asset) => asset.id === sourceAsset.id)] as CoreAsset | undefined)
       ?? sourceAsset as unknown as CoreAsset
-    const method = request.kind === 'install' || request.kind === 'update'
-      ? (request.method ?? previous?.method ?? 'copy')
-      : null
+    const method = request.kind === 'install'
+      ? (request.method ?? 'copy')
+      : request.kind === 'update'
+        ? (previous?.method ?? request.method ?? 'copy')
+        : null
     const affectedLinks = previous
       ? manifest.installations.filter((entry) => entry.managedAssetId === previous!.managedAssetId && entry.method === 'symlink' && !entry.frozen).map((entry) => entry.targetPath)
       : []
@@ -917,6 +1216,7 @@ export class CoreService {
       steps: [{ kind: request.kind === 'uninstall' ? 'remove' : method === 'symlink' ? 'symlink' : 'copy', source: sourceAsset.path, target: target.targetPath }],
       warnings: [
         ...(conflict && request.replaceExistingSource ? [`将替换 ${conflict.existing.label} 的现有来源`] : []),
+        ...(unmanagedUninstall ? [`未托管资源：将直接删除磁盘安装位置 ${target.targetPath}，且无法通过 XC Skills 恢复。`] : []),
         ...(request.kind === 'update' && affectedLinks.length ? [`共享实体更新后将同步影响 ${affectedLinks.length} 个软链接位置：\n${affectedLinks.join('\n')}`] : []),
       ],
       requiresOverwriteConfirmation: Boolean(previousStatus?.locallyModified && !request.overwriteModified && !request.replaceExistingSource),
@@ -1058,8 +1358,11 @@ export class CoreService {
           if (legacy) await this.appStore.removeInstallationSource(legacy.id)
         } else {
           const installationId = task.targetSnapshot.previousInstallationId
-          if (!installationId) throw new Error('managed installation record is missing')
-          if (task.request.kind === 'freeze') await this.managedStore.freeze(installationId)
+          if (!installationId) {
+            if (task.request.kind !== 'uninstall') throw new Error('managed installation record is missing')
+            try { await lstat(task.targetSnapshot.targetPath) } catch { throw new Error('the unmanaged installation no longer exists on disk') }
+            await rm(task.targetSnapshot.targetPath, { recursive: true, force: false })
+          } else if (task.request.kind === 'freeze') await this.managedStore.freeze(installationId)
           else if (task.request.kind === 'thaw') await this.managedStore.thaw(installationId)
           else if (task.request.kind === 'uninstall') await this.managedStore.uninstall(installationId)
         }

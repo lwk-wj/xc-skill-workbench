@@ -10,7 +10,7 @@ import OperationDialog from '../../src/renderer/src/features/operations/Operatio
 import { useOperationStore } from '../../src/renderer/src/stores/operation'
 import type { OperationPlan, OperationProgress } from '../../src/shared/ipc.js'
 
-const asset = { id: 'codex:skill-one', type: 'skills' as const, name: 'Skill One', group: '开发', path: '/project/.codex/skills/Skill One', entryPath: '/project/.codex/skills/Skill One/SKILL.md', entryState: 'active' as const, description: '', version: '1.0.0', agentId: 'codex' }
+const asset = { id: 'codex:skill-one', type: 'skills' as const, name: 'Skill One', group: '开发', sourceRelativePath: '开发/skills/skill-one', path: '/project/.codex/skills/Skill One', entryPath: '/project/.codex/skills/Skill One/SKILL.md', entryState: 'active' as const, description: '', version: '1.0.0', agentId: 'codex' }
 const projects = [{ id: 'proj', name: 'Demo', path: '/project' }]
 const agents = [
   { id: 'codex', name: 'Codex', projectBaseDir: '/project/.codex', globalBaseDir: '/global/.codex', assetDirs: { skills: '/global/.codex/skills', rules: '/global/.codex/rules', workflows: '/global/.codex/workflows' }, builtIn: true, enabled: true },
@@ -29,6 +29,26 @@ describe('Vue operation dialog', () => {
   beforeEach(() => {
     pinia = createPinia()
     setActivePinia(pinia)
+  })
+
+  it('defaults repository installs to the available project instead of global scope', async () => {
+    const plan = vi.fn()
+      .mockResolvedValueOnce(makePlan('plan-codex', '/project/.codex/skills/Skill One'))
+      .mockResolvedValueOnce(makePlan('plan-claude', '/project/.claude/skills/Skill One'))
+    window.xcSkills = {
+      operations: { plan, execute: vi.fn(), cancel: vi.fn(), onProgress: vi.fn(() => vi.fn()) },
+    } as never
+
+    const store = useOperationStore()
+    await store.open({
+      kind: 'install', asset, source: { kind: 'central' }, projects, agents,
+    })
+
+    expect(plan).toHaveBeenCalledWith(expect.objectContaining({
+      target: { scope: 'project', projectId: 'proj', agentId: 'codex' },
+    }))
+    expect(store.scope).toBe('project')
+    expect(store.targetLabel).toBe('Demo')
   })
 
   it('plans qualified multi-Agent targets, executes sequentially, rescans, and disposes progress', async () => {
@@ -82,9 +102,11 @@ describe('Vue operation dialog', () => {
       kind: 'update',
       asset: { source: { kind: 'project', projectId: 'proj' }, assetId: 'codex:skill-one' },
       target: { scope: 'project', projectId: 'proj', agentId: 'codex' },
+      method: null,
     }))
     render(OperationDialog, { global: { plugins: [pinia, ElementPlus] } })
     await waitFor(() => expect(screen.getByRole('button', { name: '确认并继续' })).toBeInTheDocument())
+    expect(screen.queryByRole('radiogroup', { name: '安装方式' })).toBeNull()
     await user.click(screen.getByRole('button', { name: '确认并继续' }))
     await user.click(screen.getByRole('button', { name: '确认执行' }))
     await waitFor(() => expect(screen.getByRole('button', { name: '取消操作' })).toBeInTheDocument())

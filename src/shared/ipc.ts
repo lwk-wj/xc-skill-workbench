@@ -275,6 +275,45 @@ export const LegacyInstallationMigrationPreviewSchema = z.object({
   expiresAt: z.string().datetime(),
 }).strict()
 export type LegacyInstallationMigrationPreview = z.infer<typeof LegacyInstallationMigrationPreviewSchema>
+export const SourceLayoutMigrationPreviewSchema = z.object({
+  token: safeId,
+  moves: z.array(z.object({
+    entityId: safeId,
+    fromRelativePath: skillRootRelativePath,
+    toRelativePath: skillRootRelativePath,
+    sourceRelativePath: skillRootRelativePath,
+  }).strict()),
+  unresolved: z.array(z.object({
+    entityId: safeId,
+    fromRelativePath: skillRootRelativePath,
+    reason: z.enum(['source-unavailable', 'not-found', 'ambiguous']),
+    candidateAssetIds: z.array(safeId),
+  }).strict()),
+  symlinkCount: z.number().int().nonnegative(),
+  copyCount: z.number().int().nonnegative(),
+  conflicts: z.array(z.object({ path: safeAbsolutePath, reason: z.string().min(1) }).strict()),
+  expiresAt: z.string().datetime(),
+}).strict()
+export type SourceLayoutMigrationPreview = z.infer<typeof SourceLayoutMigrationPreviewSchema>
+export const ManagedEntityRepairPreviewSchema = z.object({
+  installationId: safeId,
+  entityId: safeId,
+  candidates: z.array(z.object({
+    candidateToken: safeId,
+    repositoryLabel: safeName,
+    sourceRelativePath: skillRootRelativePath,
+  }).strict()),
+  expiresAt: z.string().datetime(),
+}).strict()
+export type ManagedEntityRepairPreview = z.infer<typeof ManagedEntityRepairPreviewSchema>
+export const ManagedEntityRepairResultSchema = z.object({
+  installationId: safeId,
+  entityId: safeId,
+  fromRelativePath: skillRootRelativePath,
+  toRelativePath: skillRootRelativePath,
+  rebuiltSymlinkCount: z.number().int().nonnegative(),
+}).strict()
+export type ManagedEntityRepairResult = z.infer<typeof ManagedEntityRepairResultSchema>
 export const RepositoryConfigUpdateResultSchema = z.object({
   config: XcSkillsConfigSchema,
   repository: RepositoryViewSchema,
@@ -286,6 +325,7 @@ export const AssetRecordSchema = z.object({
   type: z.enum(['skills', 'rules', 'workflows']),
   name: safeName,
   group: z.string(),
+  sourceRelativePath: skillRootRelativePath,
   path: safeAbsolutePath,
   entryPath: safeAbsolutePath,
   entryState: z.enum(['active', 'frozen', 'conflict', 'invalid']),
@@ -364,6 +404,10 @@ export interface DesktopApi {
     executeAssetStoreMigration(token: string): Promise<XcSkillsConfig>
     previewLegacyInstallationMigration(): Promise<LegacyInstallationMigrationPreview>
     executeLegacyInstallationMigration(token: string): Promise<LegacyInstallationMigrationPreview>
+    previewSourceLayoutMigration(): Promise<SourceLayoutMigrationPreview>
+    executeSourceLayoutMigration(token: string): Promise<SourceLayoutMigrationPreview>
+    previewManagedEntityRepair(installationId: string): Promise<ManagedEntityRepairPreview>
+    executeManagedEntityRepair(candidateToken: string): Promise<ManagedEntityRepairResult>
     updateConfig(input: RepositoryConfigInput): Promise<RepositoryConfigUpdateResult>
     listBranches(): Promise<RepositoryBranch[]>
     selectBranch(branch: string): Promise<RepositoryView>
@@ -387,7 +431,7 @@ export interface DesktopApi {
 export const Channels = {
   projectsList: 'projects:list', projectsChooseAndAdd: 'projects:chooseAndAdd', projectsRemove: 'projects:remove',
   agentsList: 'agents:list', agentsSetEnabled: 'agents:setEnabled', agentsSaveCustom: 'agents:saveCustom', agentsRemoveCustom: 'agents:removeCustom',
-  repositoriesGetConfig: 'repositories:getConfig', repositoriesCurrent: 'repositories:current', repositoriesChooseLocalPath: 'repositories:chooseLocalPath', repositoriesChooseAssetStorePath: 'repositories:chooseAssetStorePath', repositoriesPreviewAssetStoreMigration: 'repositories:previewAssetStoreMigration', repositoriesExecuteAssetStoreMigration: 'repositories:executeAssetStoreMigration', repositoriesPreviewLegacyInstallationMigration: 'repositories:previewLegacyInstallationMigration', repositoriesExecuteLegacyInstallationMigration: 'repositories:executeLegacyInstallationMigration', repositoriesUpdateConfig: 'repositories:updateConfig', repositoriesListBranches: 'repositories:listBranches', repositoriesSelectBranch: 'repositories:selectBranch', repositoriesSetDefaultBranch: 'repositories:setDefaultBranch', repositoriesRefresh: 'repositories:refresh',
+  repositoriesGetConfig: 'repositories:getConfig', repositoriesCurrent: 'repositories:current', repositoriesChooseLocalPath: 'repositories:chooseLocalPath', repositoriesChooseAssetStorePath: 'repositories:chooseAssetStorePath', repositoriesPreviewAssetStoreMigration: 'repositories:previewAssetStoreMigration', repositoriesExecuteAssetStoreMigration: 'repositories:executeAssetStoreMigration', repositoriesPreviewLegacyInstallationMigration: 'repositories:previewLegacyInstallationMigration', repositoriesExecuteLegacyInstallationMigration: 'repositories:executeLegacyInstallationMigration', repositoriesPreviewSourceLayoutMigration: 'repositories:previewSourceLayoutMigration', repositoriesExecuteSourceLayoutMigration: 'repositories:executeSourceLayoutMigration', repositoriesPreviewManagedEntityRepair: 'repositories:previewManagedEntityRepair', repositoriesExecuteManagedEntityRepair: 'repositories:executeManagedEntityRepair', repositoriesUpdateConfig: 'repositories:updateConfig', repositoriesListBranches: 'repositories:listBranches', repositoriesSelectBranch: 'repositories:selectBranch', repositoriesSetDefaultBranch: 'repositories:setDefaultBranch', repositoriesRefresh: 'repositories:refresh',
   thirdPartyRepositoriesList: 'third-party-repositories:list', thirdPartyRepositoriesAdd: 'third-party-repositories:add', thirdPartyRepositoriesUpdate: 'third-party-repositories:update', thirdPartyRepositoriesRemove: 'third-party-repositories:remove', thirdPartyRepositoriesRefresh: 'third-party-repositories:refresh',
   thirdPartyRepositoriesRelinkInstallation: 'third-party-repositories:relinkInstallation',
   assetsScan: 'assets:scan', assetsDetail: 'assets:detail', assetsStatuses: 'assets:statuses',
