@@ -118,4 +118,20 @@ describe('preload repository API', () => {
 
     expect(electron.invoke).toHaveBeenCalledWith(Channels.operationsInspectSourceConflict, input)
   })
+
+  it('publishes resources through a preview token instead of renderer-provided paths', async () => {
+    const request = {
+      asset: { source: { kind: 'project' as const, projectId: 'project-1' }, assetId: 'asset-1' },
+      targetGroup: 'backend',
+    }
+    electron.invoke.mockResolvedValue({})
+
+    await api.publishing.preview(request)
+    await api.publishing.execute('publish-token')
+
+    expect(electron.invoke.mock.calls).toEqual([
+      [Channels.publishingPreview, request],
+      [Channels.publishingExecute, 'publish-token'],
+    ])
+  })
 })

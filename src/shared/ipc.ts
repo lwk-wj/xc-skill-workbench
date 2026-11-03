@@ -388,6 +388,39 @@ export type OperationResult = z.infer<typeof OperationResultSchema>
 export const OperationProgressSchema = z.object({ planId: safeId, completed: z.number().int().nonnegative(), total: z.number().int().nonnegative(), message: z.string() })
 export type OperationProgress = z.infer<typeof OperationProgressSchema>
 
+const publishGroup = z.string().trim().max(200).refine((value) =>
+  !value.includes('/') && !value.includes('\\') && !/[\u0000-\u001f\u007f]/u.test(value),
+'invalid publish group')
+export const PublishRequestSchema = z.object({
+  asset: AssetSelectionSchema,
+  targetGroup: publishGroup,
+}).strict().superRefine((value, ctx) => {
+  if (value.asset.source.kind !== 'project' && value.asset.source.kind !== 'global') {
+    ctx.addIssue({ code: 'custom', path: ['asset', 'source'], message: 'only installed resources can be published' })
+  }
+})
+export type PublishRequest = z.infer<typeof PublishRequestSchema>
+export const PublishPreviewSchema = z.object({
+  token: safeId,
+  assetName: safeName,
+  assetType: z.enum(['skills', 'rules', 'workflows']),
+  sourcePath: safeAbsolutePath,
+  targetRelativePath: skillRootRelativePath,
+  branch: gitBranch,
+  remoteUrl: z.string().trim().min(1),
+  change: z.enum(['create', 'replace']),
+  warnings: z.array(z.string()),
+  expiresAt: z.string().datetime(),
+}).strict()
+export type PublishPreview = z.infer<typeof PublishPreviewSchema>
+export const PublishResultSchema = z.object({
+  status: z.enum(['published', 'unchanged']),
+  commit: z.string().regex(/^[0-9a-f]{40}$/u).nullable(),
+  branch: gitBranch,
+  targetRelativePath: skillRootRelativePath,
+}).strict()
+export type PublishResult = z.infer<typeof PublishResultSchema>
+
 export const ExternalUrlSchema = z.string().url().refine((value) => {
   try { return ['http:', 'https:', 'mailto:'].includes(new URL(value).protocol) } catch { return false }
 }, 'only http, https, and mailto URLs are allowed')
@@ -423,6 +456,7 @@ export interface DesktopApi {
     relinkInstallation(input: RelinkInstallationInput): Promise<void>
   }
   assets: { scan(source: SourceSelection): Promise<AssetRecord[]>; detail(asset: AssetSelection): Promise<AssetDetail>; statuses(asset: AssetSelection): Promise<AssetStatusLocation[]> }
+  publishing: { preview(input: PublishRequest): Promise<PublishPreview>; execute(token: string): Promise<PublishResult> }
   operations: { inspectSourceConflict(input: OperationRequest): Promise<SourceConflict | null>; plan(input: OperationRequest): Promise<OperationPlan>; execute(planId: string): Promise<OperationResult>; cancel(planId: string): Promise<void>; onProgress(listener: (progress: OperationProgress) => void): () => void }
   preferences: { getTheme(): Promise<ThemePreference>; setTheme(theme: ThemePreference): Promise<void>; getLastSource(): Promise<SourceSelection> }
   system: { openExternal(url: string): Promise<void> }
@@ -435,6 +469,7 @@ export const Channels = {
   thirdPartyRepositoriesList: 'third-party-repositories:list', thirdPartyRepositoriesAdd: 'third-party-repositories:add', thirdPartyRepositoriesUpdate: 'third-party-repositories:update', thirdPartyRepositoriesRemove: 'third-party-repositories:remove', thirdPartyRepositoriesRefresh: 'third-party-repositories:refresh',
   thirdPartyRepositoriesRelinkInstallation: 'third-party-repositories:relinkInstallation',
   assetsScan: 'assets:scan', assetsDetail: 'assets:detail', assetsStatuses: 'assets:statuses',
+  publishingPreview: 'publishing:preview', publishingExecute: 'publishing:execute',
   operationsInspectSourceConflict: 'operations:inspectSourceConflict', operationsPlan: 'operations:plan', operationsExecute: 'operations:execute', operationsCancel: 'operations:cancel', operationsProgress: 'operations:progress',
   preferencesGetTheme: 'preferences:getTheme', preferencesSetTheme: 'preferences:setTheme', preferencesGetLastSource: 'preferences:getLastSource', systemOpenExternal: 'system:openExternal',
 } as const

@@ -175,6 +175,33 @@ describe('IPC contracts', () => {
     expect(Channels.repositoriesCurrent).toBe('repositories:current')
   })
 
+  it('publishes only local selections and executes with a server-issued token', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-publish-ipc-'))
+    const handlers = new Map<string, (event: unknown, input?: unknown) => unknown>()
+    const previewPublish = vi.fn(async () => ({
+      token: 'publish-1', assetName: 'demo', assetType: 'skills' as const,
+      sourcePath: '/tmp/project/.codex/skills/demo', targetRelativePath: 'backend/skills/demo',
+      branch: 'main', remoteUrl: 'https://example.com/skills.git', change: 'create' as const,
+      warnings: [], expiresAt: '2026-09-07T10:00:00.000Z',
+    }))
+    const executePublish = vi.fn(async () => ({
+      status: 'published' as const, commit: 'a'.repeat(40), branch: 'main', targetRelativePath: 'backend/skills/demo',
+    }))
+    registerIpc({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+      appStore: new AppStore(join(root, 'state.json')),
+      services: { previewPublish, executePublish },
+    })
+
+    const request = { asset: { source: { kind: 'project', projectId: 'project-1' }, assetId: 'asset-1' }, targetGroup: 'backend' }
+    await expect(handlers.get(Channels.publishingPreview)?.({}, request)).resolves.toMatchObject({ token: 'publish-1' })
+    await expect(handlers.get(Channels.publishingPreview)?.({}, { ...request, targetPath: '/tmp/forged' })).rejects.toThrow()
+    await expect(handlers.get(Channels.publishingPreview)?.({}, { asset: { source: { kind: 'central' }, assetId: 'asset-1' }, targetGroup: '' })).rejects.toThrow()
+    await expect(handlers.get(Channels.publishingExecute)?.({}, { token: 'publish-1' })).rejects.toThrow()
+    await expect(handlers.get(Channels.publishingExecute)?.({}, 'publish-1')).resolves.toMatchObject({ status: 'published' })
+    expect(executePublish).toHaveBeenCalledWith('publish-1')
+  })
+
   it('requires a server-issued migration token and rejects forged migration paths', async () => {
     const root = await mkdtemp(join(tmpdir(), 'xc-desktop-migration-ipc-'))
     const handlers = new Map<string, (event: unknown, input?: unknown) => unknown>()

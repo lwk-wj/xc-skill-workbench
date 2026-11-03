@@ -33,6 +33,10 @@ const symlinkLocation: AssetStatusLocation = {
   ...location,
   method: 'symlink',
 }
+const outdatedLocation: AssetStatusLocation = {
+  ...location,
+  status: { ...location.status, status: 'update_available', updateAvailable: true },
+}
 
 describe('asset action policy', () => {
   it.each([
@@ -44,6 +48,10 @@ describe('asset action policy', () => {
     ['thaw', 'project', frozen, frozenLocation, true, null],
     ['thaw', 'project', frozen, { ...frozenLocation, method: 'symlink' }, false, '软链接资源不支持解冻'],
     ['thaw', 'project', active, location, false, '资源尚未冻结'],
+    ['update', 'project', active, outdatedLocation, true, null],
+    ['update', 'project', active, location, false, '资源当前没有可用更新'],
+    ['update', 'project', active, { ...outdatedLocation, method: 'symlink' }, true, null],
+    ['update', 'project', active, { ...outdatedLocation, status: { ...outdatedLocation.status, status: 'locally_modified', locallyModified: true } }, false, '资源存在本地修改，请单独确认覆盖'],
     ['uninstall', 'project', active, location, true, null],
     ['uninstall', 'project', active, null, false, '缺少受管安装位置'],
   ] as const)(
@@ -70,6 +78,8 @@ describe('asset action policy', () => {
     expect(primaryAssetAction({ sourceKind: 'project', asset: active, location: symlinkLocation }))
       .toEqual({ kind: 'uninstall', label: '卸载' })
     expect(overflowAssetActions({ sourceKind: 'project', asset: active, location: symlinkLocation }))
+      .toEqual([])
+    expect(overflowAssetActions({ sourceKind: 'project', asset: active, location: null }))
       .toEqual([])
   })
 

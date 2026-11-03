@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto'
+import { execFile as execFileCallback } from 'node:child_process'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { cp, lstat, mkdir, readdir, realpath, rename, rm } from 'node:fs/promises'
+import { cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm } from 'node:fs/promises'
+import { promisify } from 'node:util'
 import {
   BUILTIN_AGENTS,
   ManagedAssetStore,
@@ -38,9 +40,12 @@ import type {
   SourceLayoutMigrationPreview,
   ManagedEntityRepairPreview,
   ManagedEntityRepairResult,
+  PublishPreview,
+  PublishRequest,
+  PublishResult,
 } from '../../shared/ipc.js'
 import {
-  AssetRecordSchema, AssetDetailSchema, AssetStatusRecordSchema, XcSkillsConfigSchema,
+  AssetRecordSchema, AssetDetailSchema, AssetStatusRecordSchema, PublishPreviewSchema, PublishResultSchema, XcSkillsConfigSchema,
 } from '../../shared/ipc.js'
 import { assetStorePathForRoot, repositoryCachePathForRoot, resourceRootFromAssetStore } from '../../shared/resource-storage.js'
 import type { AppStore } from './app-store.js'
@@ -74,6 +79,14 @@ type PlannedTargetSnapshot = {
   targetPath: string
   previousInstallationId: string | null
 }
+type PendingPublish = {
+  preview: PublishPreview
+  selection: AssetSelection
+  sourcePath: string
+  repositoryRoot: string
+  targetPath: string
+  expiresAt: number
+}
 
 const asDesktopAsset = (asset: unknown): AssetRecord => AssetRecordSchema.parse(asset)
 const keyFor = (source: SourceSelection, id: string) => `${JSON.stringify(source)}:${id}`
@@ -106,6 +119,64 @@ const sourceUnavailableStatus = (reason = '来源仓库不可用'): DesktopStatu
   status: 'source_unavailable', updateAvailable: false, locallyModified: false, sourceHash: null, installedHash: null,
   sourceVersion: null, installedVersion: null, resolvedTarget: null, reason,
 })
+const execFile = promisify(execFileCallback)
+const git = async (root: string, args: string[]): Promise<string> => {
+  const { stdout } = await execFile('git', ['-C', root, ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    maxBuffer: 4 * 1024 * 1024,
+  })
+  return stdout.trim()
+}
+
+const ignoredPublishEntries = new Set(['.git', 'history', '.DS_Store'])
+
+/**
+ * Mirror a publish source into the checkout one entry at a time. Unchanged files
+ * are left untouched, while removed source entries are removed from the target.
+ * This keeps the resulting Git commit limited to the real file-level changes.
+ */
+const syncPublishEntry = async (source: string, target: string, activeDirectories = new Set<string>()): Promise<void> => {
+  const resolvedSource = await realpath(source)
+  const sourceEntry = await lstat(resolvedSource)
+  const targetEntry = await lstat(target).catch(() => null)
+
+  if (sourceEntry.isDirectory()) {
+    if (activeDirectories.has(resolvedSource)) throw new Error(`发布资源包含循环软链接：${source}`)
+    const nextActiveDirectories = new Set(activeDirectories).add(resolvedSource)
+    if (targetEntry && !targetEntry.isDirectory()) await rm(target, { recursive: true, force: true })
+    await mkdir(target, { recursive: true })
+
+    const sourceNames = (await readdir(resolvedSource)).filter((name) => !ignoredPublishEntries.has(name))
+    const sourceNameSet = new Set(sourceNames)
+    for (const targetName of await readdir(target)) {
+      if (!ignoredPublishEntries.has(targetName) && !sourceNameSet.has(targetName)) {
+        await rm(join(target, targetName), { recursive: true, force: true })
+      }
+    }
+    for (const name of sourceNames) {
+      await syncPublishEntry(join(resolvedSource, name), join(target, name), nextActiveDirectories)
+    }
+    return
+  }
+
+  if (!sourceEntry.isFile()) throw new Error(`发布资源包含不支持的文件类型：${source}`)
+  if (targetEntry?.isFile()) {
+    const [sourceContent, targetContent] = await Promise.all([readFile(resolvedSource), readFile(target)])
+    const executableModeChanged = (sourceEntry.mode & 0o111) !== (targetEntry.mode & 0o111)
+    if (!executableModeChanged && sourceContent.equals(targetContent)) return
+  } else if (targetEntry) {
+    await rm(target, { recursive: true, force: true })
+  }
+  await mkdir(dirname(target), { recursive: true })
+  await cp(resolvedSource, target, { dereference: true, force: true })
+}
+const safePathSegment = (value: string): boolean => Boolean(value)
+  && value !== '.'
+  && value !== '..'
+  && !value.includes('/')
+  && !value.includes('\\')
+  && !/[\u0000-\u001f\u007f]/u.test(value)
 
 export class CoreService {
   private readonly appStore: AppStore
@@ -156,6 +227,7 @@ export class CoreService {
     candidate: SourceLayoutCandidate
     expiresAt: number
   }>()
+  private readonly pendingPublishes = new Map<string, PendingPublish>()
 
   private async installMethod(path: string): Promise<'copy' | 'symlink' | null> {
     try {
@@ -841,6 +913,102 @@ export class CoreService {
     const coreAsset = this.coreCatalog.get(keyFor(selection.source, selection.assetId)) ?? asset as unknown as CoreAsset
     return AssetDetailSchema.parse(await this.core.readAssetDetail(coreAsset))
   }
+
+  async previewPublish(request: PublishRequest): Promise<PublishPreview> {
+    if (request.asset.source.kind !== 'project' && request.asset.source.kind !== 'global') {
+      throw new Error('只有项目或全局资源可以发布')
+    }
+    const asset = await this.getCatalogAsset(request.asset)
+    if (asset.entryState !== 'active') throw new Error('请先解冻或修复资源，再执行发布')
+    if (!safePathSegment(asset.name)) throw new Error('资源名称不能安全映射到仓库目录')
+    if (request.targetGroup && !safePathSegment(request.targetGroup)) throw new Error('发布分组包含非法路径字符')
+
+    const installedEntry = await lstat(asset.path).catch(() => { throw new Error('资源在磁盘上不存在或软链接已断开') })
+    const sourcePath = await realpath(asset.path).catch(() => { throw new Error('资源在磁盘上不存在或软链接已断开') })
+    const sourceEntry = await lstat(sourcePath)
+    if (asset.type === 'skills' && !sourceEntry.isDirectory()) throw new Error('Skill 必须是文件夹')
+    if (asset.type !== 'skills' && !sourceEntry.isFile()) throw new Error('Rule 和 Workflow 必须是文件')
+
+    const config = await this.ensureConfig()
+    if (!config.remoteUrl) throw new Error('请先在设置中配置中央远程仓库 URL')
+    const repository = await this.resolveSource(true)
+    const branch = this.selectedBranch ?? config.defaultBranch ?? repository.branch ?? 'main'
+    const targetRelativePath = [request.targetGroup, asset.type, asset.name].filter(Boolean).join('/')
+    const targetPath = resolve(repository.root, targetRelativePath)
+    const relativeTarget = relative(repository.root, targetPath)
+    if (relativeTarget.startsWith('..') || isAbsolute(relativeTarget)) throw new Error('发布目标超出中央仓库')
+    if (sourcePath === await realpath(targetPath).catch(() => targetPath)) {
+      throw new Error('资源已经直接位于中央仓库，无需重复发布')
+    }
+
+    const token = randomUUID()
+    const expiresAt = Date.now() + this.planExpiryMs
+    const preview = PublishPreviewSchema.parse({
+      token,
+      assetName: asset.name,
+      assetType: asset.type,
+      sourcePath,
+      targetRelativePath,
+      branch,
+      remoteUrl: config.remoteUrl,
+      change: await lstat(targetPath).then(() => 'replace' as const).catch(() => 'create' as const),
+      warnings: [
+        '发布只更新中央仓库，不会自动覆盖 store 中的已安装实体。',
+        '发布会按文件同步差异，只提交新增、修改或删除的内容。',
+        ...(installedEntry.isSymbolicLink() ? ['发布时会复制软链接指向的真实内容。'] : []),
+      ],
+      expiresAt: new Date(expiresAt).toISOString(),
+    })
+    this.pendingPublishes.set(token, { preview, selection: request.asset, sourcePath, repositoryRoot: repository.root, targetPath, expiresAt })
+    return preview
+  }
+
+  async executePublish(token: string): Promise<PublishResult> {
+    const pending = this.pendingPublishes.get(token)
+    this.pendingPublishes.delete(token)
+    if (!pending || pending.expiresAt <= Date.now()) throw new Error('发布预览已过期，请重新确认')
+    const asset = await this.getCatalogAsset(pending.selection)
+    const currentSource = await realpath(asset.path).catch(() => { throw new Error('待发布资源已经从磁盘移除') })
+    if (currentSource !== pending.sourcePath) throw new Error('待发布资源位置已变化，请重新预览')
+
+    const config = await this.ensureConfig()
+    if (!config.remoteUrl || config.remoteUrl !== pending.preview.remoteUrl) throw new Error('中央仓库配置已变化，请重新预览')
+    const publishRoot = this.repositoryCacheRoot(config)
+    await mkdir(publishRoot, { recursive: true })
+    const checkout = await mkdtemp(join(publishRoot, 'publish-'))
+    try {
+      await execFile('git', ['clone', '--single-branch', '--branch', pending.preview.branch, config.remoteUrl, checkout], {
+        encoding: 'utf8',
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+        maxBuffer: 4 * 1024 * 1024,
+      })
+      const targetPath = resolve(checkout, pending.preview.targetRelativePath)
+      const relativeTarget = relative(checkout, targetPath)
+      if (relativeTarget.startsWith('..') || isAbsolute(relativeTarget)) throw new Error('发布目标超出中央仓库')
+      await mkdir(dirname(targetPath), { recursive: true })
+      await syncPublishEntry(currentSource, targetPath)
+      await git(checkout, ['add', '--', pending.preview.targetRelativePath])
+      const changed = await git(checkout, ['diff', '--cached', '--name-only', '--', pending.preview.targetRelativePath])
+      if (!changed) {
+        return PublishResultSchema.parse({
+          status: 'unchanged', commit: null, branch: pending.preview.branch,
+          targetRelativePath: pending.preview.targetRelativePath,
+        })
+      }
+      await git(checkout, ['-c', 'user.name=XC Skills', '-c', 'user.email=xc-skills@local', 'commit', '-m', `feat(${asset.type}): publish ${asset.name}`])
+      const commit = await git(checkout, ['rev-parse', 'HEAD'])
+      await git(checkout, ['push', 'origin', `HEAD:${pending.preview.branch}`])
+      this.repository = null
+      await this.resolveSource(true)
+      return PublishResultSchema.parse({
+        status: 'published', commit, branch: pending.preview.branch,
+        targetRelativePath: pending.preview.targetRelativePath,
+      })
+    } finally {
+      await rm(checkout, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }
+
   private async resolveRecordedSource(record: InstallationSourceRecord): Promise<{ asset: AssetRecord; coreAsset: CoreAsset }> {
     if (record.source.kind === 'third-party') {
       const repository = await this.requireThirdPartyRepositories().resolve(record.source.repositoryId)

@@ -55,6 +55,7 @@ const batchActions = computed<{ kind: BatchActionKind; label: string }[]>(() => 
   props.sourceKind === 'central' || props.sourceKind === 'third-party'
     ? [{ kind: 'install', label: '批量安装' }]
     : [
+        { kind: 'update', label: '批量更新' },
         { kind: 'freeze', label: '批量冻结' },
         { kind: 'thaw', label: '批量解冻' },
         { kind: 'uninstall', label: '批量卸载' },

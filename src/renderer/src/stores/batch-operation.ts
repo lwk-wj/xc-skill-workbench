@@ -89,7 +89,7 @@ export const useBatchOperationStore = defineStore('batch-operation', () => {
     && error.value === null)
   const operationCount = computed(() => planEntries.value.length)
   const title = computed(() => ({
-    install: '批量安装资源', freeze: '批量冻结资源', thaw: '批量解冻资源', uninstall: '批量卸载资源',
+    install: '批量安装资源', update: '批量更新资源', freeze: '批量冻结资源', thaw: '批量解冻资源', uninstall: '批量卸载资源',
   })[kind.value])
   const targetLabel = computed(() => (
     scope.value === 'global'

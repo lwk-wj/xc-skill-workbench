@@ -21,10 +21,11 @@
     "@element-plus/icons-vue": "^2.3.2",
     "dompurify": "3.4.12",
     "element-plus": "^2.14.3",
+    "fs-extra": "^11.3.6",
     "marked": "18.0.6",
     "pinia": "^4.0.2",
     "vue": "^3.5.40",
-    "xc-skills": "git+https://github.com/lwk-wj/xc-skills.git#28f457a077635d99e2fd6716ac21410efcb3c5c8",
+    "xc-skills": "git+https://github.com/lwk-wj/xc-skills.git#73e06c5e24c20ba5b3a52ed0cc1aa1007c119f2f",
     "zod": "4.4.3"
   },
   "devDependencies": {

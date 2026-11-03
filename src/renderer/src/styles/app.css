@@ -2917,6 +2917,121 @@ h3 {
   padding-top: 2px;
 }
 
+.publish-resource-dialog .el-dialog__body {
+  display: grid;
+  gap: 18px;
+}
+
+.publish-resource-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+
+.publish-resource-mark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border-radius: 11px;
+  color: #fff;
+  background: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.publish-resource-summary h3,
+.publish-resource-summary p,
+.publish-result-card h3,
+.publish-result-card p {
+  margin: 0;
+}
+
+.publish-resource-summary h3 {
+  color: var(--text-primary);
+  font-size: 16px;
+}
+
+.publish-resource-summary p {
+  margin-top: 4px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.publish-group-field {
+  display: grid;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.publish-preview-card,
+.publish-result-card {
+  display: grid;
+  gap: 13px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent-soft) 48%, var(--surface));
+}
+
+.publish-preview-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.publish-preview-card dl {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.publish-preview-card dl div {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.publish-preview-card dt {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.publish-preview-card dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.publish-preview-card code,
+.publish-result-card code {
+  overflow-wrap: anywhere;
+}
+
+.publish-loading {
+  margin: 0;
+  padding: 20px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.publish-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

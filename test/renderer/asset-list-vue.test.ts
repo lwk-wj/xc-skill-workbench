@@ -18,6 +18,10 @@ const location = {
   projectId: 'proj', agentId: 'codex', path: active.path, method: 'copy' as const,
   status: { status: 'current' as const, updateAvailable: false, locallyModified: false, sourceHash: 'a', installedHash: 'a', sourceVersion: '1.0.0', installedVersion: '1.0.0', resolvedTarget: null, reason: '' },
 }
+const outdatedLocation = {
+  ...location,
+  status: { ...location.status, status: 'update_available' as const, updateAvailable: true },
+}
 
 const baseProps = {
   selectedId: null, selectedIds: [] as string[], agentName: () => 'Codex', loading: false, error: null, query: '', groupFilter: 'all', statusFilter: 'all', agentFilter: 'all',
@@ -94,6 +98,36 @@ describe('AssetList operations', () => {
     } })
     expect(await screen.findByRole('button', { name: '解冻 Frozen Skill' })).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: '更新 Old Skill' })).toBeInTheDocument()
+  })
+
+  it('offers batch update when every selected resource has an available update', () => {
+    const outdated = { ...active, id: 'codex:old', name: 'Old Skill' }
+    renderTestApp(AssetList, { props: {
+      ...baseProps,
+      assets: [outdated],
+      selectedIds: [outdated.id],
+      sourceKind: 'project',
+      managementStatuses: { [outdated.id]: [outdatedLocation] },
+    } })
+
+    expect(screen.getByRole('button', { name: '批量更新' })).toBeEnabled()
+  })
+
+  it('allows batch update for symlink resources with an available repository update', () => {
+    const outdated = { ...active, id: 'codex:symlink-old', name: 'Symlink Skill' }
+    renderTestApp(AssetList, {
+      props: {
+        ...baseProps,
+        assets: [outdated],
+        selectedIds: [outdated.id],
+        sourceKind: 'project',
+        managementStatuses: {
+          [outdated.id]: [{ ...outdatedLocation, method: 'symlink', path: outdated.path }],
+        },
+      },
+    })
+
+    expect(screen.getByRole('button', { name: '批量更新' })).toBeEnabled()
   })
 
   it('offers installation directly on central repository rows without selecting the row', async () => {

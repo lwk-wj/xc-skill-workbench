@@ -1,10 +1,14 @@
 import { mkdtemp, mkdir, readFile, writeFile, rm, realpath, symlink, lstat, readdir, cp } from 'node:fs/promises'
+import { execFile as execFileCallback } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 import { describe, expect, it, vi } from 'vitest'
 import { AppStore } from '../../src/main/services/app-store.js'
 import { CoreService } from '../../src/main/services/core-service.js'
 import { hashAsset, scanAssets } from 'xc-skills/core'
+
+const execFile = promisify(execFileCallback)
 
 describe('CoreService', () => {
   it('upgrades an empty legacy resource root before installing from its repositories directory', async () => {
@@ -1208,6 +1212,86 @@ describe('CoreService', () => {
     })
     await expect(service.plan(request)).rejects.toThrow(/ENTRY_CONFLICT/)
     await expect(service.plan({ ...request, replaceExistingSource: true })).resolves.toMatchObject({ warnings: expect.arrayContaining([expect.stringMatching(/替换/)]) })
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it('publishes a project Skill through an opaque preview into the configured remote repository', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'xc-desktop-publish-'))
+    const remote = join(root, 'remote.git')
+    const repositoryRoot = join(root, 'repository')
+    const projectRoot = join(root, 'project')
+    const skillRoot = join(projectRoot, '.codex', 'skills', 'demo')
+    const configPath = join(root, 'config.json')
+    await execFile('git', ['init', '--bare', '--initial-branch=main', remote])
+    await execFile('git', ['clone', remote, repositoryRoot])
+    await execFile('git', ['-C', repositoryRoot, 'config', 'user.name', 'Test User'])
+    await execFile('git', ['-C', repositoryRoot, 'config', 'user.email', 'test@example.com'])
+    await writeFile(join(repositoryRoot, 'README.md'), '# Catalog\n')
+    await execFile('git', ['-C', repositoryRoot, 'add', 'README.md'])
+    await execFile('git', ['-C', repositoryRoot, 'commit', '-m', 'initial'])
+    await execFile('git', ['-C', repositoryRoot, 'push', 'origin', 'main'])
+    await mkdir(join(repositoryRoot, 'backend', 'skills', 'demo'), { recursive: true })
+    await writeFile(join(repositoryRoot, 'backend', 'skills', 'demo', 'SKILL.md'), '# Old Demo\n')
+    await writeFile(join(repositoryRoot, 'backend', 'skills', 'demo', 'keep.txt'), 'unchanged\n')
+    await writeFile(join(repositoryRoot, 'backend', 'skills', 'demo', 'obsolete.txt'), 'remove me\n')
+    await execFile('git', ['-C', repositoryRoot, 'add', 'backend'])
+    await execFile('git', ['-C', repositoryRoot, 'commit', '-m', 'seed demo'])
+    await execFile('git', ['-C', repositoryRoot, 'push', 'origin', 'main'])
+    await mkdir(skillRoot, { recursive: true })
+    await writeFile(join(skillRoot, 'SKILL.md'), '---\ndescription: Publish me\n---\n\n# Demo\n\nUpdated locally.\n')
+    await writeFile(join(skillRoot, 'keep.txt'), 'unchanged\n')
+    await writeFile(configPath, JSON.stringify({
+      mode: 'remote', remoteUrl: remote, defaultBranch: 'main', assetStorePath: join(root, 'resources', 'store'),
+    }))
+    const appStore = new AppStore(join(root, 'state.json'))
+    await appStore.addProject({ id: 'project-1', name: 'Project', path: projectRoot })
+    const agent = {
+      id: 'codex', name: 'Codex', projectBaseDir: '.codex', globalBaseDir: join(root, 'global'),
+      assetDirs: { skills: 'skills', rules: 'rules', workflows: 'workflows' }, builtIn: true, enabled: true,
+    }
+    const resolveRepositorySource = vi.fn(async () => ({
+      root: repositoryRoot, branch: 'main', commit: 'a'.repeat(40), kind: 'branch-cache' as const, allowSymlink: false,
+      stale: false, cachedAt: null,
+    }))
+    const service = new CoreService({
+      appStore,
+      configPath,
+      core: {
+        BUILTIN_AGENTS: [agent],
+        resolveAgentAssetRoot: (_agent, scope, base, type) => scope === 'project'
+          ? join(base, '.codex', type)
+          : join(root, 'global', type),
+        resolveRepositorySource,
+      },
+    })
+
+    const [asset] = await service.scan({ kind: 'project', projectId: 'project-1' })
+    await service.currentRepository()
+    expect(resolveRepositorySource).toHaveBeenCalledTimes(1)
+    const preview = await service.previewPublish({
+      asset: { source: { kind: 'project', projectId: 'project-1' }, assetId: asset!.id },
+      targetGroup: 'backend',
+    })
+    expect(resolveRepositorySource).toHaveBeenCalledTimes(2)
+    expect(preview).toMatchObject({
+      assetName: 'demo', targetRelativePath: 'backend/skills/demo', branch: 'main', change: 'replace',
+    })
+    expect(preview).not.toHaveProperty('repositoryRoot')
+
+    const result = await service.executePublish(preview.token)
+    expect(result).toMatchObject({ status: 'published', targetRelativePath: 'backend/skills/demo' })
+    expect(result.commit).toMatch(/^[0-9a-f]{40}$/)
+
+    const verification = join(root, 'verification')
+    await execFile('git', ['clone', '--branch', 'main', remote, verification])
+    await expect(readFile(join(verification, 'backend', 'skills', 'demo', 'SKILL.md'), 'utf8')).resolves.toContain('# Demo')
+    await expect(readFile(join(verification, 'backend', 'skills', 'demo', 'keep.txt'), 'utf8')).resolves.toBe('unchanged\n')
+    await expect(readFile(join(verification, 'backend', 'skills', 'demo', 'obsolete.txt'), 'utf8')).rejects.toThrow()
+    const publishedFiles = await execFile('git', ['-C', verification, 'show', '--format=', '--name-status', result.commit!])
+    expect(publishedFiles.stdout).toContain('M\tbackend/skills/demo/SKILL.md')
+    expect(publishedFiles.stdout).toContain('D\tbackend/skills/demo/obsolete.txt')
+    expect(publishedFiles.stdout).not.toContain('keep.txt')
+    await expect(service.executePublish(preview.token)).rejects.toThrow(/预览已过期/)
     await rm(root, { recursive: true, force: true })
   })
 })

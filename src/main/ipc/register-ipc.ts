@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import {
   AgentDefinitionSchema, AssetDetailSchema, AssetSelectionSchema, AssetRecordSchema, Channels, ExternalUrlSchema,
   OperationRequestSchema, OperationResultSchema, OperationPlanSchema, OperationProgressSchema, RepositoryBranchSchema, RepositoryViewSchema,
+  PublishPreviewSchema, PublishRequestSchema, PublishResultSchema,
   RepositoryConfigInputSchema, RepositoryConfigUpdateResultSchema, SourceSelectionSchema, ThemePreferenceSchema,
   AssetStoreMigrationPreviewSchema,
   LegacyInstallationMigrationPreviewSchema,
@@ -23,6 +24,7 @@ import {
   type SourceLayoutMigrationPreview,
   type ManagedEntityRepairPreview,
   type ManagedEntityRepairResult,
+  type PublishPreview, type PublishRequest, type PublishResult,
 } from '../../shared/ipc.js'
 import type { AppStore } from '../services/app-store.js'
 import type { CoreService } from '../services/core-service.js'
@@ -66,6 +68,8 @@ export interface IpcServices {
   scan?: (source: SourceSelection) => Promise<AssetRecord[]>
   detail?: (selection: { source: SourceSelection; assetId: string }) => Promise<AssetDetail>
   statuses?: (selection: { source: SourceSelection; assetId: string }) => Promise<unknown[]>
+  previewPublish?: (request: PublishRequest) => Promise<PublishPreview>
+  executePublish?: (token: string) => Promise<PublishResult>
   plan?: (request: OperationRequest) => Promise<OperationPlan>
   inspectSourceConflict?: (request: OperationRequest) => Promise<SourceConflict | null>
   execute?: (planId: string, options?: { signal?: AbortSignal; onProgress?: (progress: OperationProgress) => void }) => Promise<OperationResult>
@@ -104,6 +108,7 @@ export const registerIpc = ({ ipcMain, appStore, services: suppliedServices = {}
     listThirdPartyRepositories: () => coreService.listThirdPartyRepositories(), addThirdPartyRepository: (input) => coreService.addThirdPartyRepository(input), updateThirdPartyRepository: (id, input) => coreService.updateThirdPartyRepository(id, input), removeThirdPartyRepository: (id) => coreService.removeThirdPartyRepository(id), refreshThirdPartyRepository: (id) => coreService.refreshThirdPartyRepository(id),
     relinkInstallation: (input) => coreService.relinkInstallation(input),
     scan: (source) => coreService.scan(source), detail: (selection) => coreService.detail(selection), statuses: (selection) => coreService.statuses(selection),
+    previewPublish: (request) => coreService.previewPublish(request), executePublish: (token) => coreService.executePublish(token),
     inspectSourceConflict: (request) => coreService.inspectSourceConflict(request),
     plan: (request) => coreService.plan(request), execute: (planId, options) => coreService.execute(planId, options), cancel: (planId, options) => coreService.cancel(planId, options), rescan: (paths) => coreService.rescanAffected(paths),
   } : {}
@@ -228,6 +233,13 @@ export const registerIpc = ({ ipcMain, appStore, services: suppliedServices = {}
   invoke(Channels.assetsScan, SourceSelectionSchema, (source) => services.scan ? services.scan(source) : unsupported('assets.scan'))
   invoke(Channels.assetsDetail, AssetSelectionSchema, (selection) => services.detail ? services.detail(selection) : unsupported('assets.detail'))
   invoke(Channels.assetsStatuses, AssetSelectionSchema, (selection) => services.statuses ? services.statuses(selection) : unsupported('assets.statuses'))
+
+  invoke(Channels.publishingPreview, PublishRequestSchema, async (request) => PublishPreviewSchema.parse(
+    services.previewPublish ? await services.previewPublish(request) : unsupported('publishing.preview'),
+  ))
+  invoke(Channels.publishingExecute, z.string().regex(/^[A-Za-z0-9._:-]+$/).min(1).max(200), async (token) => PublishResultSchema.parse(
+    services.executePublish ? await services.executePublish(token) : unsupported('publishing.execute'),
+  ))
 
   invoke(Channels.operationsInspectSourceConflict, OperationRequestSchema, async (request) => {
     const conflict = services.inspectSourceConflict

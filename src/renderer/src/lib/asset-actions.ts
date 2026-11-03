@@ -2,7 +2,7 @@ import type { AssetRecord, AssetStatusLocation, SourceSelection } from '../../..
 
 export type AssetActionKind = 'install' | 'update' | 'update-with-warning' | 'freeze' | 'thaw' | 'uninstall' | 'relink-source'
 export type AssetAction = { kind: AssetActionKind; label: string }
-export type BatchActionKind = 'install' | 'freeze' | 'thaw' | 'uninstall'
+export type BatchActionKind = 'install' | 'update' | 'freeze' | 'thaw' | 'uninstall'
 export type ActionEligibility = { eligible: true } | { eligible: false; reason: string }
 
 export type AssetActionInput = {
@@ -28,15 +28,15 @@ export const primaryAssetAction = (input: AssetActionInput): AssetAction | null 
 }
 
 export const overflowAssetActions = (input: AssetActionInput): AssetAction[] => {
-  if (isRepositorySource(input.sourceKind) || !input.location) return []
+  if (isRepositorySource(input.sourceKind)) return []
   const primary = primaryAssetAction(input)
-  const status = input.location.status.status
+  const status = input.location?.status.status
   return [
     ...(status === 'source_unavailable' ? [{ kind: 'relink-source', label: '重新关联来源' } as const] : []),
-    ...(!isSymlink(input) && input.asset.type === 'skills' && input.asset.entryState === 'active' && primary?.kind !== 'freeze'
+    ...(input.location && !isSymlink(input) && input.asset.type === 'skills' && input.asset.entryState === 'active' && primary?.kind !== 'freeze'
       ? [{ kind: 'freeze', label: '冻结' } as const]
       : []),
-    ...(primary?.kind !== 'uninstall' ? [{ kind: 'uninstall', label: '卸载' } as const] : []),
+    ...(input.location && primary?.kind !== 'uninstall' ? [{ kind: 'uninstall', label: '卸载' } as const] : []),
   ]
 }
 
@@ -48,6 +48,11 @@ export const batchActionEligibility = ({ action, sourceKind, asset, location }: 
     return { eligible: true }
   }
   if (!location) return { eligible: false, reason: '缺少受管安装位置' }
+  if (action === 'update') {
+    if (location.status.status === 'locally_modified') return { eligible: false, reason: '资源存在本地修改，请单独确认覆盖' }
+    if (location.status.status !== 'update_available') return { eligible: false, reason: '资源当前没有可用更新' }
+    return { eligible: true }
+  }
   if (action === 'uninstall') return { eligible: true }
   if (action === 'freeze') {
     if (isSymlink({ sourceKind, asset, location })) return { eligible: false, reason: '软链接资源不支持冻结' }
